@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BPMN Visualizador - TypeScript</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.png" />
+    <link rel="stylesheet" href="src/styles/professional.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>🔄 BPMN Visualizador</h1>
+      <div class="controls">
+        <select id="fileSelector" class="file-selector">
+          <option value="">Selecione um arquivo BPMN...</option>
+        </select>
+        <button id="drawPath" class="btn btn-secondary">
+          Desenhar Caminho
+        </button>
+        <button id="resetView" class="btn btn-tertiary">Reset</button>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <div class="sidebar">
+        <h3>Funcionalidades</h3>
+        <div class="feature-group">
+          <h4>Visualização</h4>
+          <button id="fitDiagram" class="feature-btn">Ajustar Diagrama</button>
+          <button id="zoomIn" class="feature-btn">Zoom In</button>
+          <button id="zoomOut" class="feature-btn">Zoom Out</button>
+        </div>
+
+        <div class="feature-group">
+          <h4>Caminhos</h4>
+          <button id="showPath1" class="feature-btn">Caminho Principal</button>
+          <button id="showPath2" class="feature-btn">
+            Caminho Alternativo
+          </button>
+          <button id="clearPaths" class="feature-btn">Limpar Caminhos</button>
+        </div>
+
+        <div class="feature-group">
+          <h4>Monitoramento</h4>
+          <button id="simulateProcess" class="feature-btn">
+            Simular Processo
+          </button>
+          <button id="stopSimulation" class="feature-btn">
+            Parar Simulação
+          </button>
+        </div>
+      </div>
+
+      <div class="diagram-container">
+        <div id="bpmn-container" class="bpmn-viewer"></div>
+        <div id="loading" class="loading hidden">
+          <div class="spinner"></div>
+          <p>Carregando diagrama BPMN...</p>
+        </div>
+      </div>
+    </main>
+
+    <footer class="status-bar">
+      <span id="status">Pronto para carregar diagrama BPMN</span>
+      <span id="elementInfo"></span>
+    </footer>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

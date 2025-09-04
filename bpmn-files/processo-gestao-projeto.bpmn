@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" 
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI" 
+                   id="processo-gestao-projeto" 
+                   targetNamespace="http://bpmn.io/schema/bpmn">
+  
+  <bpmn:process id="GestaoProjetoProcess" isExecutable="true">
+    <!-- Evento de Início -->
+    <bpmn:startEvent id="InicioProcesso" name="Solicitação de Projeto Recebida">
+      <bpmn:outgoing>SequenceFlow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    
+    <!-- Análise Inicial -->
+    <bpmn:userTask id="AnaliseInicial" name="Análise Inicial da Solicitação">
+      <bpmn:incoming>SequenceFlow_1</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_2</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Gateway de Decisão - Viabilidade -->
+    <bpmn:exclusiveGateway id="GatewayViabilidade" name="Projeto Viável?">
+      <bpmn:incoming>SequenceFlow_2</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_Viavel</bpmn:outgoing>
+      <bpmn:outgoing>SequenceFlow_Inviavel</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    
+    <!-- Rejeição do Projeto -->
+    <bpmn:serviceTask id="RejeitarProjeto" name="Notificar Rejeição">
+      <bpmn:incoming>SequenceFlow_Inviavel</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_FimRejeicao</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <!-- Planejamento do Projeto -->
+    <bpmn:userTask id="PlanejamentoProjeto" name="Elaborar Plano do Projeto">
+      <bpmn:incoming>SequenceFlow_Viavel</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_3</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Gateway Paralelo - Atividades Simultâneas -->
+    <bpmn:parallelGateway id="GatewayParalelo1" name="Dividir Atividades">
+      <bpmn:incoming>SequenceFlow_3</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_Equipe</bpmn:outgoing>
+      <bpmn:outgoing>SequenceFlow_Recursos</bpmn:outgoing>
+      <bpmn:outgoing>SequenceFlow_Cronograma</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    
+    <!-- Formação da Equipe -->
+    <bpmn:userTask id="FormarEquipe" name="Formar Equipe do Projeto">
+      <bpmn:incoming>SequenceFlow_Equipe</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_EquipeFormada</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Alocação de Recursos -->
+    <bpmn:userTask id="AlocarRecursos" name="Alocar Recursos Necessários">
+      <bpmn:incoming>SequenceFlow_Recursos</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_RecursosAlocados</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Definir Cronograma -->
+    <bpmn:userTask id="DefinirCronograma" name="Definir Cronograma Detalhado">
+      <bpmn:incoming>SequenceFlow_Cronograma</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_CronogramaPronto</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Gateway de Convergência -->
+    <bpmn:parallelGateway id="GatewayParalelo2" name="Reunir Preparação">
+      <bpmn:incoming>SequenceFlow_EquipeFormada</bpmn:incoming>
+      <bpmn:incoming>SequenceFlow_RecursosAlocados</bpmn:incoming>
+      <bpmn:incoming>SequenceFlow_CronogramaPronto</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_4</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    
+    <!-- Aprovação Executiva -->
+    <bpmn:userTask id="AprovacaoExecutiva" name="Aprovação da Diretoria">
+      <bpmn:incoming>SequenceFlow_4</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_5</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Gateway de Decisão - Aprovação -->
+    <bpmn:exclusiveGateway id="GatewayAprovacao" name="Projeto Aprovado?">
+      <bpmn:incoming>SequenceFlow_5</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_Aprovado</bpmn:outgoing>
+      <bpmn:outgoing>SequenceFlow_NaoAprovado</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    
+    <!-- Revisão do Plano -->
+    <bpmn:userTask id="RevisarPlano" name="Revisar Plano do Projeto">
+      <bpmn:incoming>SequenceFlow_NaoAprovado</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_Revisao</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Execução do Projeto -->
+    <bpmn:subProcess id="ExecucaoProjeto" name="Execução do Projeto">
+      <bpmn:incoming>SequenceFlow_Aprovado</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_6</bpmn:outgoing>
+      
+      <!-- Sub-processo com atividades internas -->
+      <bpmn:startEvent id="InicioExecucao" name="Início da Execução">
+        <bpmn:outgoing>SequenceFlow_Sub1</bpmn:outgoing>
+      </bpmn:startEvent>
+      
+      <bpmn:userTask id="DesenvolvimentoFase1" name="Desenvolvimento - Fase 1">
+        <bpmn:incoming>SequenceFlow_Sub1</bpmn:incoming>
+        <bpmn:outgoing>SequenceFlow_Sub2</bpmn:outgoing>
+      </bpmn:userTask>
+      
+      <bpmn:userTask id="TestesFase1" name="Testes - Fase 1">
+        <bpmn:incoming>SequenceFlow_Sub2</bpmn:incoming>
+        <bpmn:outgoing>SequenceFlow_Sub3</bpmn:outgoing>
+      </bpmn:userTask>
+      
+      <bpmn:userTask id="DesenvolvimentoFase2" name="Desenvolvimento - Fase 2">
+        <bpmn:incoming>SequenceFlow_Sub3</bpmn:incoming>
+        <bpmn:outgoing>SequenceFlow_Sub4</bpmn:outgoing>
+      </bpmn:userTask>
+      
+      <bpmn:userTask id="TestesFase2" name="Testes - Fase 2">
+        <bpmn:incoming>SequenceFlow_Sub4</bpmn:incoming>
+        <bpmn:outgoing>SequenceFlow_Sub5</bpmn:outgoing>
+      </bpmn:userTask>
+      
+      <bpmn:endEvent id="FimExecucao" name="Execução Concluída">
+        <bpmn:incoming>SequenceFlow_Sub5</bpmn:incoming>
+      </bpmn:endEvent>
+      
+      <!-- Sequence Flows do Sub-processo -->
+      <bpmn:sequenceFlow id="SequenceFlow_Sub1" sourceRef="InicioExecucao" targetRef="DesenvolvimentoFase1"/>
+      <bpmn:sequenceFlow id="SequenceFlow_Sub2" sourceRef="DesenvolvimentoFase1" targetRef="TestesFase1"/>
+      <bpmn:sequenceFlow id="SequenceFlow_Sub3" sourceRef="TestesFase1" targetRef="DesenvolvimentoFase2"/>
+      <bpmn:sequenceFlow id="SequenceFlow_Sub4" sourceRef="DesenvolvimentoFase2" targetRef="TestesFase2"/>
+      <bpmn:sequenceFlow id="SequenceFlow_Sub5" sourceRef="TestesFase2" targetRef="FimExecucao"/>
+    </bpmn:subProcess>
+    
+    <!-- Validação e Entrega -->
+    <bpmn:userTask id="ValidacaoEntrega" name="Validação e Entrega Final">
+      <bpmn:incoming>SequenceFlow_6</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_7</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Gateway de Decisão - Qualidade -->
+    <bpmn:exclusiveGateway id="GatewayQualidade" name="Qualidade OK?">
+      <bpmn:incoming>SequenceFlow_7</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_QualidadeOK</bpmn:outgoing>
+      <bpmn:outgoing>SequenceFlow_QualidadeNOK</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    
+    <!-- Correções -->
+    <bpmn:userTask id="FazerCorrecoes" name="Fazer Correções Necessárias">
+      <bpmn:incoming>SequenceFlow_QualidadeNOK</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_Correcoes</bpmn:outgoing>
+    </bpmn:userTask>
+    
+    <!-- Encerramento -->
+    <bpmn:serviceTask id="EncerrarProjeto" name="Documentar e Encerrar Projeto">
+      <bpmn:incoming>SequenceFlow_QualidadeOK</bpmn:incoming>
+      <bpmn:outgoing>SequenceFlow_8</bpmn:outgoing>
+    </bpmn:serviceTask>
+    
+    <!-- Evento de Fim - Sucesso -->
+    <bpmn:endEvent id="FimSucesso" name="Projeto Concluído com Sucesso">
+      <bpmn:incoming>SequenceFlow_8</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <!-- Evento de Fim - Rejeição -->
+    <bpmn:endEvent id="FimRejeicao" name="Projeto Rejeitado">
+      <bpmn:incoming>SequenceFlow_FimRejeicao</bpmn:incoming>
+    </bpmn:endEvent>
+    
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="SequenceFlow_1" sourceRef="InicioProcesso" targetRef="AnaliseInicial"/>
+    <bpmn:sequenceFlow id="SequenceFlow_2" sourceRef="AnaliseInicial" targetRef="GatewayViabilidade"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Viavel" name="Sim" sourceRef="GatewayViabilidade" targetRef="PlanejamentoProjeto"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Inviavel" name="Não" sourceRef="GatewayViabilidade" targetRef="RejeitarProjeto"/>
+    <bpmn:sequenceFlow id="SequenceFlow_FimRejeicao" sourceRef="RejeitarProjeto" targetRef="FimRejeicao"/>
+    <bpmn:sequenceFlow id="SequenceFlow_3" sourceRef="PlanejamentoProjeto" targetRef="GatewayParalelo1"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Equipe" sourceRef="GatewayParalelo1" targetRef="FormarEquipe"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Recursos" sourceRef="GatewayParalelo1" targetRef="AlocarRecursos"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Cronograma" sourceRef="GatewayParalelo1" targetRef="DefinirCronograma"/>
+    <bpmn:sequenceFlow id="SequenceFlow_EquipeFormada" sourceRef="FormarEquipe" targetRef="GatewayParalelo2"/>
+    <bpmn:sequenceFlow id="SequenceFlow_RecursosAlocados" sourceRef="AlocarRecursos" targetRef="GatewayParalelo2"/>
+    <bpmn:sequenceFlow id="SequenceFlow_CronogramaPronto" sourceRef="DefinirCronograma" targetRef="GatewayParalelo2"/>
+    <bpmn:sequenceFlow id="SequenceFlow_4" sourceRef="GatewayParalelo2" targetRef="AprovacaoExecutiva"/>
+    <bpmn:sequenceFlow id="SequenceFlow_5" sourceRef="AprovacaoExecutiva" targetRef="GatewayAprovacao"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Aprovado" name="Sim" sourceRef="GatewayAprovacao" targetRef="ExecucaoProjeto"/>
+    <bpmn:sequenceFlow id="SequenceFlow_NaoAprovado" name="Não" sourceRef="GatewayAprovacao" targetRef="RevisarPlano"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Revisao" sourceRef="RevisarPlano" targetRef="AprovacaoExecutiva"/>
+    <bpmn:sequenceFlow id="SequenceFlow_6" sourceRef="ExecucaoProjeto" targetRef="ValidacaoEntrega"/>
+    <bpmn:sequenceFlow id="SequenceFlow_7" sourceRef="ValidacaoEntrega" targetRef="GatewayQualidade"/>
+    <bpmn:sequenceFlow id="SequenceFlow_QualidadeOK" name="Sim" sourceRef="GatewayQualidade" targetRef="EncerrarProjeto"/>
+    <bpmn:sequenceFlow id="SequenceFlow_QualidadeNOK" name="Não" sourceRef="GatewayQualidade" targetRef="FazerCorrecoes"/>
+    <bpmn:sequenceFlow id="SequenceFlow_Correcoes" sourceRef="FazerCorrecoes" targetRef="ValidacaoEntrega"/>
+    <bpmn:sequenceFlow id="SequenceFlow_8" sourceRef="EncerrarProjeto" targetRef="FimSucesso"/>
+  </bpmn:process>
+</bpmn:definitions>

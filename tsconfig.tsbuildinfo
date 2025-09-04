@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/components/bpmnviewer.ts","./src/components/bpmnviewer_enhanced.ts","./src/lib/bpmn-visualization-mock-enhanced.js","./src/lib/bpmn-visualization-mock.js","./src/lib/bpmn-visualization-real.js","./src/utils/bpmnfilemanager.ts","./src/utils/bpmnutils.ts"],"version":"5.9.2"}

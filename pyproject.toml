@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "bpmn-visualization-project"
+version = "0.1.0"
+description = "Visualizador BPMN avançado em TypeScript"
+authors = ["Seu Nome <seu.email@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+[tool.poetry.group.dev.dependencies]
+typescript = "^5.0.0"
+http-server = "^14.1.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+build = "tsc"
+serve = "http-server dist -p 3000 -o"
+dev = "tsc --watch"
