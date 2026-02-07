@@ -2,32 +2,32 @@
 
 Um visualizador BPMN avançado construído em TypeScript com funcionalidades de visualização, navegação e simulação de processos.
 
-## 🎨 **NOVO: Padrão Oficial BPMN com Ícones process-analytics**
+##  **NOVO: Padrão Oficial BPMN com Ícones process-analytics**
 
-✨ **Agora com ícones e estilos oficiais do [process-analytics/bpmn-visualization-js](https://github.com/process-analytics/bpmn-visualization-js)**
+ **Agora com ícones e estilos oficiais do [process-analytics/bpmn-visualization-js](https://github.com/process-analytics/bpmn-visualization-js)**
 
-### 🎯 Ícones Oficiais Implementados
+###  Ícones Oficiais Implementados
 
-- **👤 User Task**: Baseado no flaticon 'employees' icon
-- **⚙️ Service Task**: Engrenagem conforme draw.io stencils
-- **📝 Script Task**: Documento com código (noun project)
-- **📊 Business Rule Task**: Tabela com grade
-- **✋ Manual Task**: Ícone de mão (noun project)
-- **📤📥 Send/Receive Tasks**: Envelopes estilizados
-- **⏰💬⚠️ Events**: Timer, Message, Error com ícones padrão
-- **❌➕⭕ Gateways**: Símbolos X, +, círculo conforme especificação
+- ** User Task**: Baseado no flaticon 'employees' icon
+- ** Service Task**: Engrenagem conforme draw.io stencils
+- ** Script Task**: Documento com código (noun project)
+- ** Business Rule Task**: Tabela com grade
+- ** Manual Task**: Ícone de mão (noun project)
+- ** Send/Receive Tasks**: Envelopes estilizados
+- ** Events**: Timer, Message, Error com ícones padrão
+- ** Gateways**: Símbolos X, +, círculo conforme especificação
 
-### 🎨 Características Visuais
+###  Características Visuais
 
 - Cores e tipografia da especificação BPMN 2.0
 - Layout profissional similar ao bpmn.io
 - Interatividade completa com elementos
 - Compatibilidade total com process-analytics
 
-📄 **Documentação completa**: [BPMN-ICONS-OFFICIAL.md](BPMN-ICONS-OFFICIAL.md)  
-📋 **Padrões BPMN**: [BPMN-STANDARD.md](BPMN-STANDARD.md)
+ **Documentação completa**: [BPMN-ICONS-OFFICIAL.md](BPMN-ICONS-OFFICIAL.md)  
+ **Padrões BPMN**: [BPMN-STANDARD.md](BPMN-STANDARD.md)
 
-## 🚀 Estrutura Simplificada
+##  Estrutura Simplificada
 
 O projeto agora usa uma estrutura simplificada **sem pasta `dist/`**:
 
@@ -35,9 +35,9 @@ O projeto agora usa uma estrutura simplificada **sem pasta `dist/`**:
 - Não é necessário compilar para uma pasta separada
 - Desenvolvimento mais direto e simples
 
-## 🎯 Funcionalidades
+##  Funcionalidades
 
-### ✨ Visualização BPMN
+###  Visualização BPMN
 
 - **Carregamento de arquivos**: Suporte para arquivos `.bpmn` e `.xml`
 - **Seletor de arquivos**: Dropdown com arquivos BPMN pré-carregados
@@ -45,21 +45,21 @@ O projeto agora usa uma estrutura simplificada **sem pasta `dist/`**:
 - **Ícones oficiais**: User Task, Service Task, Gateways com símbolos padrão
 - **Zoom e navegação**: Controles de zoom e ajuste automático
 
-### 🛤️ Desenho de Caminhos
+###  Desenho de Caminhos
 
 - **Caminho principal**: Destaque do fluxo principal (aprovação)
 - **Caminho alternativo**: Destaque de fluxos alternativos (rejeição)
 - **Múltiplos estilos**: Diferentes cores e animações para cada caminho
 - **Animação de fluxo**: Efeitos visuais de movimento nos caminhos
 
-### 🔄 Simulação de Processos
+###  Simulação de Processos
 
 - **Execução animada**: Simula a execução do processo passo a passo
 - **Controles de simulação**: Iniciar, parar e reiniciar simulação
 - **Destaque de elementos**: Elementos ativos são destacados durante a simulação
 - **Tempo configurável**: Velocidade de simulação ajustável
 
-### 🎨 Interface Moderna
+###  Interface Moderna
 
 - **Design responsivo**: Funciona em diferentes tamanhos de tela
 - **Padrão BPMN oficial**: Cores, fontes e ícones da especificação
@@ -68,7 +68,7 @@ O projeto agora usa uma estrutura simplificada **sem pasta `dist/`**:
 - **Sidebar funcional**: Controles organizados por categorias
 - **Notificações**: Feedback visual para ações do usuário
 
-## 🚀 Como Usar
+##  Como Usar
 
 ### Pré-requisitos
 
@@ -76,7 +76,7 @@ O projeto agora usa uma estrutura simplificada **sem pasta `dist/`**:
 - Python 3.8+ e Poetry (para gerenciamento do projeto)
 - TypeScript (instalado automaticamente)
 
-### ⚡ Execução Rápida
+###  Execução Rápida
 
 **Opção 1 - Script automatizado:**
 
@@ -94,7 +94,7 @@ python -m http.server 8000
 # http://localhost:8000
 ```
 
-### 📋 Pré-requisitos
+###  Pré-requisitos
 
 - **Python 3.x** (para servidor HTTP)
 - **Navegador moderno** (Chrome, Firefox, Safari, Edge)
@@ -140,7 +140,7 @@ poetry run build  # Compila TypeScript
 poetry run serve  # Inicia servidor
 ```
 
-## 📁 Estrutura do Projeto
+##  Estrutura do Projeto
 
 ```
 src/
@@ -161,7 +161,7 @@ feats-bpmn-visualization/   # Funcionalidades JS existentes
 └── ...                     # Outras funcionalidades
 ```
 
-## 🎮 Como Usar a Interface
+##  Como Usar a Interface
 
 1. **Carregar Diagrama**:
 
@@ -186,7 +186,7 @@ feats-bpmn-visualization/   # Funcionalidades JS existentes
    - "Parar Simulação": Interrompe a animação
    - Os elementos ficam destacados conforme a simulação avança
 
-## 🛠️ Desenvolvimento
+##  Desenvolvimento
 
 ### Tecnologias Utilizadas
 
@@ -203,72 +203,9 @@ feats-bpmn-visualization/   # Funcionalidades JS existentes
 - **ProcessSimulator**: Simula execução de processos
 - **BpmnUtils**: Utilitários para manipulação de arquivos BPMN
 
-### Funcionalidades dos Feats
 
-O projeto reutiliza funcionalidades JavaScript existentes em `feats-bpmn-visualization/`:
-
-- **draw-path**: Base para desenho de caminhos
-- **monitoring**: Base para simulação de processos
-- **hacktoberfest-custom-themes**: Temas personalizados
-- **prediction**: Visualização de dados preditivos
-
-## 🎨 Personalização
-
-### Estilos de Caminho
-
-```css
-.path-primary {
-  stroke: #48bb78 !important; /* Verde - Caminho principal */
-  stroke-width: 4px !important;
-  animation: pathFlow 2s linear infinite;
-}
-
-.path-secondary {
-  stroke: #ed8936 !important; /* Laranja - Caminho alternativo */
-}
-
-.path-tertiary {
-  stroke: #9f7aea !important; /* Roxo - Caminho terciário */
-}
-```
-
-### Configurações de Simulação
-
-```typescript
-// Velocidade da simulação (em milissegundos)
-const SIMULATION_SPEED = 1500;
-
-// Cores de destaque
-const HIGHLIGHT_COLORS = {
-  active: "#ed8936",
-  highlighted: "#4299e1",
-  path: "#48bb78",
-};
-```
-
-## 📝 Próximos Passos
-
-- [ ] Integração com bpmn-engine para execução real
-- [ ] Suporte a múltiplos diagramas em abas
-- [ ] Editor de propriedades de elementos
-- [ ] Exportação de diagramas
-- [ ] Temas personalizáveis
-- [ ] Suporte a plugins
-- [ ] Integração com APIs externas
-- [ ] Modo colaborativo
-
-## 🤝 Contribuição
-
-1. Faça um fork do projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
-
-## 📄 Licença
+## Licença
 
 Este projeto está sob a licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
 
----
 
-**🔄 BPMN Visualizador** - Visualização moderna e interativa de processos BPMN
