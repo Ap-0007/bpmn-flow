@@ -1,0 +1,41 @@
+{
+  "name": "bpmn-flow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A modular, embeddable BPMN 2.0 workflow library: parse, execute and interactively visualize any BPMN process.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Bappoz",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bappoz/bpmn-visualization.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "dev": "npm run dev --workspace @bpmn-flow/playground"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.7.0",
+    "prettier": "^3.9.5",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^4.1.10"
+  }
+}

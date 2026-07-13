@@ -1,0 +1,39 @@
+/**
+ * Execution overlay styles for @bpmn-flow/viewer.
+ * Import once in your app: `import '@bpmn-flow/viewer/styles.css'`.
+ * Classes are applied by BpmnFlowViewer to bpmn-visualization elements.
+ */
+
+.bpmn-flow-completed > rect,
+.bpmn-flow-completed > path,
+.bpmn-flow-completed > ellipse,
+.bpmn-flow-completed > circle,
+.bpmn-flow-completed > polygon {
+  stroke: #2f9e44 !important;
+  fill: #ebfbee !important;
+}
+
+.bpmn-flow-active > rect,
+.bpmn-flow-active > path,
+.bpmn-flow-active > ellipse,
+.bpmn-flow-active > circle,
+.bpmn-flow-active > polygon {
+  stroke: #1971c2 !important;
+  fill: #e7f5ff !important;
+  stroke-width: 3px !important;
+}
+
+.bpmn-flow-waiting > rect,
+.bpmn-flow-waiting > path,
+.bpmn-flow-waiting > ellipse,
+.bpmn-flow-waiting > circle,
+.bpmn-flow-waiting > polygon {
+  stroke: #e8590c !important;
+  fill: #fff4e6 !important;
+  stroke-dasharray: 4 3;
+}
+
+.bpmn-flow-taken > path {
+  stroke: #2f9e44 !important;
+  stroke-width: 3px !important;
+}

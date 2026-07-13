@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bpmn-flow",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "packages/server/dist/bin.js",
+        "--static",
+        "apps/playground/dist",
+        "--samples",
+        "bpmn-files"
+      ],
+      "port": 3000
+    }
+  ]
+}

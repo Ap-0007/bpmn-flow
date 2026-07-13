@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BPMN Flow - Playground</title>
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>BPMN Flow</h1>
+      <div class="toolbar">
+        <select id="sample" aria-label="Exemplo BPMN"></select>
+        <label class="file-button">
+          Carregar arquivo
+          <input id="file" type="file" accept=".bpmn,.xml" hidden />
+        </label>
+        <button id="start" type="button">Iniciar</button>
+        <button id="autorun" type="button">Executar tudo</button>
+        <button id="reset" type="button" class="secondary">Reiniciar</button>
+        <button id="fit" type="button" class="secondary">Ajustar</button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="diagram" class="diagram" aria-label="Diagrama BPMN"></section>
+
+      <aside class="panel">
+        <div class="panel-block">
+          <h2>Estado</h2>
+          <p id="status" class="status">Carregue um diagrama para comecar.</p>
+        </div>
+
+        <div class="panel-block">
+          <h2>Acoes pendentes</h2>
+          <div id="actions" class="actions"></div>
+        </div>
+
+        <div class="panel-block">
+          <h2>Variaveis</h2>
+          <textarea
+            id="variables"
+            class="variables"
+            spellcheck="false"
+            placeholder='{ "amount": 150 }'
+          >{}</textarea>
+          <pre id="variables-view" class="variables-view"></pre>
+        </div>
+
+        <div class="panel-block">
+          <h2>Historico</h2>
+          <ol id="log" class="log"></ol>
+        </div>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

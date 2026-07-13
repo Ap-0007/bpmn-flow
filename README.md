@@ -1,211 +1,193 @@
-# BPMN Visualizador - TypeScript
+# BPMN Flow
 
-Um visualizador BPMN avançado construído em TypeScript com funcionalidades de visualização, navegação e simulação de processos.
+Biblioteca modular para transformar diagramas BPMN 2.0 em automacao de
+processos. Faz o parsing do BPMN para um modelo normalizado, executa o processo
+com um motor baseado em tokens e permite visualizar a execucao de forma
+interativa no navegador. Cada camada e um pacote independente e reutilizavel em
+qualquer projeto.
 
-##  **NOVO: Padrão Oficial BPMN com Ícones process-analytics**
+## Indice
 
- **Agora com ícones e estilos oficiais do [process-analytics/bpmn-visualization-js](https://github.com/process-analytics/bpmn-visualization-js)**
+- [Arquitetura](#arquitetura)
+- [Requisitos](#requisitos)
+- [Instalacao](#instalacao)
+- [Inicio rapido: usar como biblioteca](#inicio-rapido-usar-como-biblioteca)
+- [Automacao com handlers](#automacao-com-handlers)
+- [Visualizacao interativa](#visualizacao-interativa)
+- [Servidor HTTP e API REST](#servidor-http-e-api-rest)
+- [Padroes BPMN suportados](#padroes-bpmn-suportados)
+- [Desenvolvimento](#desenvolvimento)
+- [Estrutura do repositorio](#estrutura-do-repositorio)
+- [Licenca](#licenca)
 
-###  Ícones Oficiais Implementados
+## Arquitetura
 
-- ** User Task**: Baseado no flaticon 'employees' icon
-- ** Service Task**: Engrenagem conforme draw.io stencils
-- ** Script Task**: Documento com código (noun project)
-- ** Business Rule Task**: Tabela com grade
-- ** Manual Task**: Ícone de mão (noun project)
-- ** Send/Receive Tasks**: Envelopes estilizados
-- ** Events**: Timer, Message, Error com ícones padrão
-- ** Gateways**: Símbolos X, +, círculo conforme especificação
+O repositorio e um monorepo (npm workspaces) com quatro modulos:
 
-###  Características Visuais
+| Pacote                  | Responsabilidade                                                              | Ambiente      |
+| ----------------------- | ---------------------------------------------------------------------------- | ------------- |
+| `@bpmn-flow/core`       | Parser BPMN 2.0, modelo normalizado e motor de execucao por tokens.          | Node e browser |
+| `@bpmn-flow/viewer`     | Renderizacao interativa sobre `bpmn-visualization` com overlays de execucao. | Browser       |
+| `@bpmn-flow/server`     | API REST sobre o `core` e host estatico para servir uma UI numa porta.       | Node          |
+| `@bpmn-flow/playground` | Aplicacao Vite para carregar, visualizar e executar processos no navegador.  | Browser       |
 
-- Cores e tipografia da especificação BPMN 2.0
-- Layout profissional similar ao bpmn.io
-- Interatividade completa com elementos
-- Compatibilidade total com process-analytics
+Fluxo de dados: `XML BPMN -> parseBpmn -> ProcessModel -> WorkflowEngine ->
+ExecutionSnapshot -> BpmnFlowViewer`.
 
- **Documentação completa**: [BPMN-ICONS-OFFICIAL.md](BPMN-ICONS-OFFICIAL.md)  
- **Padrões BPMN**: [BPMN-STANDARD.md](BPMN-STANDARD.md)
+O `core` nao depende de nenhuma biblioteca de UI, o que permite executar
+processos tanto no backend quanto no frontend com o mesmo codigo.
 
-##  Estrutura Simplificada
+## Requisitos
 
-O projeto agora usa uma estrutura simplificada **sem pasta `dist/`**:
+- Node.js 20 ou superior
+- npm 10 ou superior
 
-- Arquivos TypeScript (`.ts`) e JavaScript (`.js`) ficam na mesma pasta `src/`
-- Não é necessário compilar para uma pasta separada
-- Desenvolvimento mais direto e simples
+## Instalacao
 
-##  Funcionalidades
-
-###  Visualização BPMN
-
-- **Carregamento de arquivos**: Suporte para arquivos `.bpmn` e `.xml`
-- **Seletor de arquivos**: Dropdown com arquivos BPMN pré-carregados
-- **Estilos padrão**: Baseado no repositório oficial bpmn-visualization-js
-- **Ícones oficiais**: User Task, Service Task, Gateways com símbolos padrão
-- **Zoom e navegação**: Controles de zoom e ajuste automático
-
-###  Desenho de Caminhos
-
-- **Caminho principal**: Destaque do fluxo principal (aprovação)
-- **Caminho alternativo**: Destaque de fluxos alternativos (rejeição)
-- **Múltiplos estilos**: Diferentes cores e animações para cada caminho
-- **Animação de fluxo**: Efeitos visuais de movimento nos caminhos
-
-###  Simulação de Processos
-
-- **Execução animada**: Simula a execução do processo passo a passo
-- **Controles de simulação**: Iniciar, parar e reiniciar simulação
-- **Destaque de elementos**: Elementos ativos são destacados durante a simulação
-- **Tempo configurável**: Velocidade de simulação ajustável
-
-###  Interface Moderna
-
-- **Design responsivo**: Funciona em diferentes tamanhos de tela
-- **Padrão BPMN oficial**: Cores, fontes e ícones da especificação
-- **Pools e Lanes**: Visualização profissional de containers
-- **Interatividade**: Hover, click e eventos customizados
-- **Sidebar funcional**: Controles organizados por categorias
-- **Notificações**: Feedback visual para ações do usuário
-
-##  Como Usar
-
-### Pré-requisitos
-
-- Node.js e npm (para dependências do frontend)
-- Python 3.8+ e Poetry (para gerenciamento do projeto)
-- TypeScript (instalado automaticamente)
-
-###  Execução Rápida
-
-**Opção 1 - Script automatizado:**
+Para desenvolver neste repositorio:
 
 ```bash
-./start-dev.sh
+npm install
+npm run build
 ```
 
-**Opção 2 - Manual:**
+Para consumir os pacotes em outro projeto (apos publicacao):
 
 ```bash
-# 1. Inicie um servidor local
-python -m http.server 8000
-
-# 2. Acesse no navegador
-# http://localhost:8000
+npm install @bpmn-flow/core
+npm install @bpmn-flow/viewer   # apenas no frontend
 ```
 
-###  Pré-requisitos
+## Inicio rapido: usar como biblioteca
 
-- **Python 3.x** (para servidor HTTP)
-- **Navegador moderno** (Chrome, Firefox, Safari, Edge)
-- **TypeScript** (opcional, para desenvolvimento)
+```ts
+import { parseBpmn, WorkflowEngine } from '@bpmn-flow/core';
 
-### Instalação Completa (Desenvolvimento)
+const model = await parseBpmn(xml);
+const [process] = model.processes;
 
-1. **Clone ou baixe o projeto**
-2. **Instale TypeScript** (opcional):
+const engine = new WorkflowEngine(process, {
+  variables: { amount: 150 },
+});
 
-   ```bash
-   npm install -g typescript
-   ```
+const snapshot = await engine.start();
+console.log(snapshot.status); // "completed" | "waiting" | "terminated" | ...
+console.log(snapshot.completedNodes);
+console.log(snapshot.variables);
+```
 
-3. **Verifique os tipos** (opcional):
+Se o processo tiver uma tarefa de usuario ou um evento de captura, a execucao
+pausa (`status: "waiting"`) e informa os tokens parados. Retome-a assim:
 
-   ```bash
-   npx tsc --noEmit
-   ```
+```ts
+const waiting = snapshot.tokens.find((t) => t.waiting);
+if (waiting?.waitReason === 'userTask') {
+  await engine.completeTask(waiting.id, { approved: true });
+} else if (waiting?.waitReason === 'catchEvent') {
+  await engine.signal(waiting.nodeId);
+}
+```
 
-4. **Inicie o servidor**:
+## Automacao com handlers
 
-   ```bash
-   python -m http.server 8000
-   ```
+Um handler executa o trabalho real por tras de uma atividade. Registre-o por id
+do elemento, por tipo de elemento ou com o coringa `*`. A resolucao segue da
+regra mais especifica para a mais generica.
 
-5. **Acesse no navegador**: `http://localhost:8000`
+```ts
+engine.registerHandler('serviceTask', async (ctx) => {
+  const total = await cobrarCartao(ctx.get('amount'));
+  ctx.set('total', total);
+  return { pago: true }; // valores retornados sao mesclados nas variaveis
+});
 
-### Usando Poetry (Gerenciamento do Projeto)
+engine.registerHandler('reservarEstoque', (ctx) => {
+  if (!temEstoque()) throw new BpmnError('SEM_ESTOQUE');
+});
+```
+
+Lancar `BpmnError` dispara um evento de borda de erro (error boundary event)
+correspondente, se existir. Erros comuns falham a execucao.
+
+## Visualizacao interativa
+
+No navegador, combine o motor com o viewer para acompanhar a execucao:
+
+```ts
+import { WorkflowEngine } from '@bpmn-flow/core';
+import { BpmnFlowViewer } from '@bpmn-flow/viewer';
+import '@bpmn-flow/viewer/styles.css';
+
+const viewer = new BpmnFlowViewer({ container: 'diagram' });
+viewer.load(xml);
+
+const engine = new WorkflowEngine(process, { mode: 'automation' });
+viewer.bindEngine(engine); // anima a execucao ao vivo
+viewer.applySnapshot(await engine.start()); // aplica o estado autoritativo
+```
+
+Estilos aplicados: nos concluidos, tokens ativos, atividades em espera e fluxos
+percorridos.
+
+## Servidor HTTP e API REST
+
+O `@bpmn-flow/server` expoe a execucao por HTTP e pode servir a interface numa
+porta.
 
 ```bash
-# Instalar Poetry (se não tiver)
-pip install poetry
-
-# Ativar ambiente virtual
-poetry shell
-
-# Instalar dependências
-poetry install
-
-# Compilar e servir
-poetry run build  # Compila TypeScript
-poetry run serve  # Inicia servidor
+npm run build
+node packages/server/dist/bin.js --static apps/playground/dist --samples bpmn-files --port 3000
 ```
 
-##  Estrutura do Projeto
+Acesse `http://localhost:3000`. Variaveis de ambiente equivalentes: `PORT`,
+`STATIC_DIR`, `SAMPLES_DIR`.
+
+Endpoints principais:
+
+| Metodo e rota                     | Descricao                                        |
+| --------------------------------- | ------------------------------------------------ |
+| `POST /api/parse`                 | Recebe `{ xml }` e retorna o modelo normalizado. |
+| `POST /api/sessions`              | Cria uma sessao de execucao e a inicia.          |
+| `GET /api/sessions/:id`           | Retorna o snapshot atual da sessao.              |
+| `POST /api/sessions/:id/complete` | Conclui uma tarefa de usuario (`{ tokenId }`).   |
+| `POST /api/sessions/:id/signal`   | Entrega um sinal/evento (`{ name }`).            |
+| `GET /api/samples`                | Lista os arquivos `.bpmn` disponiveis.           |
+
+## Padroes BPMN suportados
+
+- Eventos: inicio, fim (none, terminate, error), intermediarios de lancamento e
+  de captura, e eventos de borda (interrompentes e nao interrompentes).
+- Definicoes de evento: message, timer, error, signal, escalation.
+- Atividades: task, userTask, serviceTask, scriptTask, businessRuleTask,
+  sendTask, receiveTask, manualTask, callActivity e subprocessos embutidos.
+- Gateways: exclusivo (com fluxo default), paralelo (juncao sincronizada),
+  inclusivo (juncao por alcancabilidade), baseado em evento e complexo.
+- Fluxos de sequencia com condicoes e colaboracao (pools e message flows).
+
+## Desenvolvimento
+
+```bash
+npm run build       # compila todos os pacotes
+npm test            # executa a suite Vitest
+npm run typecheck   # checagem de tipos em todo o monorepo
+npm run lint        # ESLint
+npm run format      # Prettier
+npm run dev         # sobe o playground em modo de desenvolvimento
+```
+
+## Estrutura do repositorio
 
 ```
-src/
-├── components/
-│   └── BpmnViewer.ts       # Classe principal do visualizador
-├── utils/
-│   └── BpmnUtils.ts        # Utilitários para BPMN
-├── lib/
-│   └── bpmn-visualization-mock.js  # Mock para desenvolvimento
-├── styles/
-│   └── main.css            # Estilos da interface
-├── index.html              # Interface principal
-└── main.ts                 # Ponto de entrada da aplicação
-
-feats-bpmn-visualization/   # Funcionalidades JS existentes
-├── draw-path/              # Desenho de caminhos
-├── monitoring-*/           # Monitoramento de processos
-└── ...                     # Outras funcionalidades
+packages/
+  core/        modelo, parser e motor de execucao
+  viewer/      renderizacao interativa com overlays
+  server/      API REST e host estatico
+apps/
+  playground/  aplicacao interativa (Vite)
+bpmn-files/    diagramas .bpmn de exemplo
+docs/          documentacao complementar
 ```
 
-##  Como Usar a Interface
+## Licenca
 
-1. **Carregar Diagrama**:
-
-   - Clique em "Carregar Exemplo" para um diagrama de teste
-   - Use "Escolher arquivo" para carregar seu próprio .bpmn
-   - Ou arraste um arquivo diretamente para a área do diagrama
-
-2. **Visualização**:
-
-   - "Ajustar Diagrama": Ajusta o zoom para mostrar todo o diagrama
-   - "Zoom In/Out": Controles de zoom manual
-   - Clique em elementos para destacá-los e ver informações
-
-3. **Caminhos**:
-
-   - "Caminho Principal": Destaca o fluxo de aprovação
-   - "Caminho Alternativo": Destaca o fluxo de rejeição
-   - "Limpar Caminhos": Remove todos os destaques
-
-4. **Simulação**:
-   - "Simular Processo": Inicia animação de execução
-   - "Parar Simulação": Interrompe a animação
-   - Os elementos ficam destacados conforme a simulação avança
-
-##  Desenvolvimento
-
-### Tecnologias Utilizadas
-
-- **TypeScript**: Linguagem principal
-- **bpmn-visualization**: Biblioteca de visualização BPMN
-- **CSS3**: Estilização moderna com animações
-- **HTML5**: Interface responsiva
-- **Poetry**: Gerenciamento de projeto Python
-
-### Arquitetura
-
-- **BpmnViewer**: Classe principal que gerencia a visualização
-- **PathDrawer**: Responsável pelo desenho de caminhos
-- **ProcessSimulator**: Simula execução de processos
-- **BpmnUtils**: Utilitários para manipulação de arquivos BPMN
-
-
-## Licença
-
-Este projeto está sob a licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
-
-
+MIT. Veja [LICENSE](LICENSE).

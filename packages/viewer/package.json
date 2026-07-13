@@ -1,0 +1,33 @@
+{
+  "name": "@bpmn-flow/viewer",
+  "version": "0.1.0",
+  "description": "Interactive BPMN viewer that overlays live @bpmn-flow/core execution state on a bpmn-visualization diagram.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./styles.css"
+  },
+  "files": [
+    "dist",
+    "styles.css"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bpmn-flow/core": "^0.1.0",
+    "bpmn-visualization": "^0.48.0"
+  }
+}

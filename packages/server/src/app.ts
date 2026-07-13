@@ -1,0 +1,116 @@
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize } from 'node:path';
+import { parseBpmn } from '@bpmn-flow/core';
+import { Hono } from 'hono';
+import { SampleProvider } from './samples.js';
+import { SessionStore, type CreateSessionInput } from './sessions.js';
+
+export interface AppOptions {
+  /** Directory of `.bpmn` files exposed under `/api/samples`. */
+  samplesDir?: string;
+  /** Directory of built static assets (the playground) served at `/`. */
+  staticDir?: string;
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.bpmn': 'application/xml; charset=utf-8',
+};
+
+/**
+ * Builds the HTTP application: a REST API over @bpmn-flow/core plus optional
+ * sample and static-asset serving. Returned as a Hono app so it can be mounted
+ * into a larger server or started standalone via {@link startServer}.
+ */
+export function createApp(options: AppOptions = {}): Hono {
+  const app = new Hono();
+  const sessions = new SessionStore();
+  const samples = options.samplesDir ? new SampleProvider(options.samplesDir) : undefined;
+
+  app.get('/api/health', (c) => c.json({ status: 'ok' }));
+
+  app.post('/api/parse', async (c) => {
+    const { xml } = await c.req.json<{ xml: string }>();
+    return c.json(await parseBpmn(xml));
+  });
+
+  app.post('/api/sessions', async (c) => {
+    const body = await c.req.json<CreateSessionInput>();
+    return c.json(await sessions.create(body), 201);
+  });
+
+  app.get('/api/sessions', (c) => c.json(sessions.list()));
+
+  app.get('/api/sessions/:id', (c) => {
+    const session = sessions.get(c.req.param('id'));
+    return session ? c.json(session) : c.json({ error: 'Session not found' }, 404);
+  });
+
+  app.post('/api/sessions/:id/complete', async (c) => {
+    const { tokenId, output } = await c.req.json<{
+      tokenId: string;
+      output?: Record<string, unknown>;
+    }>();
+    return c.json(await sessions.complete(c.req.param('id'), tokenId, output));
+  });
+
+  app.post('/api/sessions/:id/signal', async (c) => {
+    const { name, output } = await c.req.json<{
+      name: string;
+      output?: Record<string, unknown>;
+    }>();
+    return c.json(await sessions.signal(c.req.param('id'), name, output));
+  });
+
+  app.delete('/api/sessions/:id', (c) => c.json({ deleted: sessions.delete(c.req.param('id')) }));
+
+  if (samples) {
+    app.get('/api/samples', async (c) => c.json(await samples.list()));
+    app.get('/api/samples/:name', async (c) => {
+      const xml = await samples.read(c.req.param('name'));
+      return xml
+        ? c.body(xml, 200, { 'content-type': MIME['.bpmn']! })
+        : c.json({ error: 'Sample not found' }, 404);
+    });
+  }
+
+  app.onError((err, c) => {
+    if (err.name === 'SessionNotFoundError') return c.json({ error: err.message }, 404);
+    if (err.name === 'BpmnParseError' || err.name === 'BpmnValidationError') {
+      return c.json({ error: err.message }, 400);
+    }
+    return c.json({ error: err.message }, 500);
+  });
+
+  if (options.staticDir) registerStatic(app, options.staticDir);
+
+  return app;
+}
+
+function registerStatic(app: Hono, dir: string): void {
+  app.get('*', async (c) => {
+    const pathname = new URL(c.req.url).pathname;
+    const requested = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+    const safe = normalize(requested).replace(/^(\.\.(\/|\\|$))+/, '');
+    const primary = join(dir, safe);
+
+    let data = await readFile(primary).catch(() => null);
+    let ext = extname(primary);
+    if (!data) {
+      // SPA fallback: serve index.html for unknown non-file routes.
+      data = await readFile(join(dir, 'index.html')).catch(() => null);
+      ext = '.html';
+    }
+    if (!data) return c.notFound();
+    return new Response(data, {
+      status: 200,
+      headers: { 'content-type': MIME[ext] ?? 'application/octet-stream' },
+    });
+  });
+}
