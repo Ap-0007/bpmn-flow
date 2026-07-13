@@ -1,9 +1,16 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 export interface SampleInfo {
   name: string;
   file: string;
+}
+
+export class InvalidSampleNameError extends Error {
+  constructor() {
+    super('Invalid sample name: use only letters, numbers, dashes and underscores.');
+    this.name = 'InvalidSampleNameError';
+  }
 }
 
 /**
@@ -32,5 +39,21 @@ export class SampleProvider {
     } catch {
       return undefined;
     }
+  }
+
+  /** Writes a `.bpmn` file, returning the stored name. */
+  async write(name: string, xml: string): Promise<string> {
+    const safe = SampleProvider.safeName(name);
+    await writeFile(join(this.directory, `${safe}.bpmn`), xml, 'utf8');
+    return safe;
+  }
+
+  /** Rejects names that could escape the directory or use unsafe characters. */
+  static safeName(name: string): string {
+    const stripped = name.trim().replace(/\.bpmn$/i, '');
+    if (!/^[A-Za-z0-9_-]+$/.test(stripped)) {
+      throw new InvalidSampleNameError();
+    }
+    return stripped;
   }
 }

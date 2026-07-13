@@ -39,6 +39,7 @@ Variaveis de ambiente equivalentes: `PORT`, `STATIC_DIR`, `SAMPLES_DIR`.
 | --------------------------------- | ------------------------------ | ---------------------------------- |
 | `GET /api/health`                 | -                              | Verificacao de disponibilidade.    |
 | `POST /api/parse`                 | `{ xml }`                      | Modelo normalizado do diagrama.    |
+| `POST /api/validate`              | `{ xml }`                      | Valida a estrutura BPMN.           |
 | `POST /api/sessions`              | `{ xml, mode?, variables? }`   | Cria e inicia uma execucao.        |
 | `GET /api/sessions`               | -                              | Lista as sessoes ativas.           |
 | `GET /api/sessions/:id`           | -                              | Snapshot atual da sessao.          |
@@ -47,6 +48,7 @@ Variaveis de ambiente equivalentes: `PORT`, `STATIC_DIR`, `SAMPLES_DIR`.
 | `DELETE /api/sessions/:id`        | -                              | Remove a sessao.                   |
 | `GET /api/samples`                | -                              | Lista os `.bpmn` do diretorio.     |
 | `GET /api/samples/:name`          | -                              | Retorna o XML de um exemplo.       |
+| `POST /api/samples`               | `{ name, xml }`                | Valida e salva um `.bpmn` no dir.  |
 
 As sessoes mantem instancias do motor em memoria, permitindo executar um
 processo passo a passo por HTTP.

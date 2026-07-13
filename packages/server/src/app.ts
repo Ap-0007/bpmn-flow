@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { parseBpmn } from '@bpmn-flow/core';
+import { parseBpmn, validateBpmn } from '@bpmn-flow/core';
 import { Hono } from 'hono';
 import { SampleProvider } from './samples.js';
 import { SessionStore, type CreateSessionInput } from './sessions.js';
@@ -38,6 +38,12 @@ export function createApp(options: AppOptions = {}): Hono {
   app.post('/api/parse', async (c) => {
     const { xml } = await c.req.json<{ xml: string }>();
     return c.json(await parseBpmn(xml));
+  });
+
+  app.post('/api/validate', async (c) => {
+    const { xml } = await c.req.json<{ xml: string }>();
+    const { valid, issues } = await validateBpmn(xml);
+    return c.json({ valid, issues });
   });
 
   app.post('/api/sessions', async (c) => {
@@ -78,11 +84,24 @@ export function createApp(options: AppOptions = {}): Hono {
         ? c.body(xml, 200, { 'content-type': MIME['.bpmn']! })
         : c.json({ error: 'Sample not found' }, 404);
     });
+    app.post('/api/samples', async (c) => {
+      const { name, xml } = await c.req.json<{ name: string; xml: string }>();
+      const validation = await validateBpmn(xml);
+      if (!validation.valid) {
+        return c.json({ error: 'Invalid BPMN', issues: validation.issues }, 400);
+      }
+      const stored = await samples.write(name, xml);
+      return c.json({ name: stored, issues: validation.issues }, 201);
+    });
   }
 
   app.onError((err, c) => {
     if (err.name === 'SessionNotFoundError') return c.json({ error: err.message }, 404);
-    if (err.name === 'BpmnParseError' || err.name === 'BpmnValidationError') {
+    if (
+      err.name === 'BpmnParseError' ||
+      err.name === 'BpmnValidationError' ||
+      err.name === 'InvalidSampleNameError'
+    ) {
       return c.json({ error: err.message }, 400);
     }
     return c.json({ error: err.message }, 500);

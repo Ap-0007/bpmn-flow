@@ -2,6 +2,8 @@ export * from './model/kinds.js';
 export * from './model/types.js';
 export { ProcessGraph } from './model/graph.js';
 export { parseBpmn } from './parser/parse.js';
+export { validateBpmn, validateModel } from './validate.js';
+export type { ValidationIssue, ValidationResult } from './validate.js';
 export { WorkflowEngine } from './engine/engine.js';
 export { BpmnError, HandlerRegistry } from './engine/handlers.js';
 export type { HandlerContext, TaskHandler, HandlerSelector } from './engine/handlers.js';

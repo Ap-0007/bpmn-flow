@@ -1,4 +1,5 @@
 import type { ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';
+import { layoutProcess } from 'bpmn-auto-layout';
 import { BpmnVisualization, FitType } from 'bpmn-visualization';
 
 /** CSS class names applied to diagram elements to reflect execution state. */
@@ -27,13 +28,34 @@ export class BpmnFlowViewer {
   private readonly takenFlows = new Set<string>();
 
   constructor(options: ViewerOptions) {
-    this.visualization = new BpmnVisualization({ container: options.container });
+    this.visualization = new BpmnVisualization({
+      container: options.container,
+      // Bounded pan and zoom (mouse wheel / drag), like a constrained canvas.
+      navigation: { enabled: true },
+    });
   }
 
-  /** Loads and renders the BPMN diagram, clearing any prior overlay state. */
-  load(xml: string): void {
-    this.visualization.load(xml, { fit: { type: FitType.Center } });
+  /**
+   * Loads and renders the BPMN diagram, clearing any prior overlay state.
+   *
+   * If the XML has no diagram interchange (no layout coordinates), a layout is
+   * computed automatically so processes authored purely in terms of semantics
+   * still render.
+   */
+  async load(xml: string): Promise<void> {
+    const renderable = hasDiagramInterchange(xml) ? xml : await this.layout(xml);
+    this.visualization.load(renderable, { fit: { type: FitType.Center } });
     this.takenFlows.clear();
+  }
+
+  private async layout(xml: string): Promise<string> {
+    try {
+      return await layoutProcess(xml);
+    } catch {
+      // Fall back to the original XML; bpmn-visualization will report if it
+      // truly cannot render.
+      return xml;
+    }
   }
 
   /** Fits the diagram to the viewport. */
@@ -117,6 +139,11 @@ export class BpmnFlowViewer {
       EXECUTION_CLASSES.taken,
     );
   }
+}
+
+/** True when the XML already carries diagram interchange (layout) data. */
+export function hasDiagramInterchange(xml: string): boolean {
+  return /BPMNDiagram|BPMNPlane|BPMNShape/.test(xml);
 }
 
 export type { ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';

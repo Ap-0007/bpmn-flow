@@ -50,6 +50,57 @@ body {
   align-items: center;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.modes {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.mode {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.mode.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.name-input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 12rem;
+}
+
+.validation p {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+
+.valid-ok {
+  color: #2f9e44;
+  font-weight: 600;
+}
+
+.valid-err {
+  color: #e03131;
+  font-weight: 600;
+}
+
+.issue-error {
+  color: #e03131;
+}
+
+.issue-warning {
+  color: #e8590c;
+}
+
 select,
 button,
 .file-button {
