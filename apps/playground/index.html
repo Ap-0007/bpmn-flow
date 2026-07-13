@@ -8,7 +8,13 @@
   <body>
     <header class="app-header">
       <h1>BPMN Flow</h1>
-      <div class="toolbar">
+
+      <div class="modes" role="tablist">
+        <button id="mode-run" type="button" class="mode active">Executar</button>
+        <button id="mode-edit" type="button" class="mode">Editar</button>
+      </div>
+
+      <div class="toolbar" id="run-toolbar">
         <select id="sample" aria-label="Exemplo BPMN"></select>
         <label class="file-button">
           Carregar arquivo
@@ -19,23 +25,41 @@
         <button id="reset" type="button" class="secondary">Reiniciar</button>
         <button id="fit" type="button" class="secondary">Ajustar</button>
       </div>
+
+      <div class="toolbar hidden" id="edit-toolbar">
+        <button id="new-diagram" type="button">Novo</button>
+        <label class="file-button">
+          Abrir arquivo
+          <input id="edit-file" type="file" accept=".bpmn,.xml" hidden />
+        </label>
+        <input id="save-name" class="name-input" placeholder="nome-do-arquivo" />
+        <button id="validate" type="button" class="secondary">Validar</button>
+        <button id="save" type="button">Salvar no repositorio</button>
+        <button id="edit-fit" type="button" class="secondary">Ajustar</button>
+      </div>
     </header>
 
     <main class="app-main">
       <section id="diagram" class="diagram" aria-label="Diagrama BPMN"></section>
+      <section id="editor" class="diagram hidden" aria-label="Editor BPMN"></section>
 
       <aside class="panel">
-        <div class="panel-block">
+        <div class="panel-block" data-mode="edit" hidden>
+          <h2>Validacao</h2>
+          <div id="validation" class="validation"></div>
+        </div>
+
+        <div class="panel-block" data-mode="run">
           <h2>Estado</h2>
           <p id="status" class="status">Carregue um diagrama para comecar.</p>
         </div>
 
-        <div class="panel-block">
+        <div class="panel-block" data-mode="run">
           <h2>Acoes pendentes</h2>
           <div id="actions" class="actions"></div>
         </div>
 
-        <div class="panel-block">
+        <div class="panel-block" data-mode="run">
           <h2>Variaveis</h2>
           <textarea
             id="variables"
@@ -46,7 +70,7 @@
           <pre id="variables-view" class="variables-view"></pre>
         </div>
 
-        <div class="panel-block">
+        <div class="panel-block" data-mode="run">
           <h2>Historico</h2>
           <ol id="log" class="log"></ol>
         </div>
