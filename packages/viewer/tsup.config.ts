@@ -7,5 +7,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  external: ['bpmn-visualization', '@bpmn-flow/core'],
+  external: ['bpmn-visualization', 'bpmn-auto-layout', '@bpmn-flow/core'],
 });

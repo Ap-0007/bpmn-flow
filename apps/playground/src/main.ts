@@ -76,7 +76,7 @@ async function loadDiagram(xml: string): Promise<void> {
   currentXml = xml;
   currentModel = await parseBpmn(xml);
   nodesById = flattenNodes(currentModel);
-  viewer.load(xml);
+  await viewer.load(xml);
   teardownEngine();
   clearLog();
   els.actions.replaceChildren();
