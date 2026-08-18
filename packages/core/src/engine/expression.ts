@@ -28,10 +28,7 @@ function compile(expression: string): (scope: Record<string, unknown>) => unknow
 }
 
 /** Evaluates an expression to a boolean against `variables`. */
-export function evaluateCondition(
-  expression: string,
-  variables: Record<string, unknown>,
-): boolean {
+export function evaluateCondition(expression: string, variables: Record<string, unknown>): boolean {
   try {
     return compile(expression)(variables) === true;
   } catch {

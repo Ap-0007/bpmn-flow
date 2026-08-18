@@ -1,20 +1,11 @@
 import type { ElementKind } from '../model/kinds.js';
 
 export type ExecutionStatus =
-  | 'idle'
-  | 'running'
-  | 'waiting'
-  | 'completed'
-  | 'terminated'
-  | 'failed';
+  'idle' | 'running' | 'waiting' | 'completed' | 'terminated' | 'failed';
 
 /** Why a token is parked, so callers know how to resume it. */
 export type WaitReason =
-  | 'userTask'
-  | 'receiveTask'
-  | 'catchEvent'
-  | 'eventBasedGateway'
-  | 'boundary';
+  'userTask' | 'receiveTask' | 'catchEvent' | 'eventBasedGateway' | 'boundary';
 
 export interface TokenSnapshot {
   id: string;

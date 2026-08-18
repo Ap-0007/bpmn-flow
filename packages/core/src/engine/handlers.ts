@@ -51,9 +51,7 @@ export class HandlerRegistry {
   }
 
   resolve(node: FlowNode): TaskHandler | undefined {
-    return (
-      this.handlers.get(node.id) ?? this.handlers.get(node.kind) ?? this.handlers.get('*')
-    );
+    return this.handlers.get(node.id) ?? this.handlers.get(node.kind) ?? this.handlers.get('*');
   }
 
   has(node: FlowNode): boolean {

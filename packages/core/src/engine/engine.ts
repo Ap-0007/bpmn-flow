@@ -115,7 +115,10 @@ export class WorkflowEngine {
   }
 
   /** Completes a parked user/receive task, then continues execution. */
-  async completeTask(tokenId: string, output?: Record<string, unknown>): Promise<ExecutionSnapshot> {
+  async completeTask(
+    tokenId: string,
+    output?: Record<string, unknown>,
+  ): Promise<ExecutionSnapshot> {
     const token = this.waiting.get(tokenId);
     if (!token) throw new BpmnExecutionError(`No waiting task token: ${tokenId}`);
     if (output) Object.assign(this.variables, output);
@@ -204,7 +207,9 @@ export class WorkflowEngine {
       const token = this.ready.shift();
       if (token) {
         if (this.steps++ > this.maxSteps) {
-          this.fail(new BpmnExecutionError('Execution exceeded maxSteps (possible infinite loop).'));
+          this.fail(
+            new BpmnExecutionError('Execution exceeded maxSteps (possible infinite loop).'),
+          );
           return;
         }
         await this.processToken(token);
@@ -226,7 +231,12 @@ export class WorkflowEngine {
       return;
     }
     this.emitter.emit('node.enter', { nodeId: node.id, nodeKind: node.kind, tokenId: token.id });
-    this.history.push({ nodeId: node.id, nodeKind: node.kind, event: 'enter', at: this.history.length });
+    this.history.push({
+      nodeId: node.id,
+      nodeKind: node.kind,
+      event: 'enter',
+      at: this.history.length,
+    });
 
     switch (true) {
       case node.kind === 'startEvent':
@@ -445,9 +455,16 @@ export class WorkflowEngine {
   private inclusiveSplit(token: RuntimeToken, node: FlowNode): void {
     const flows = token.scope.graph.outgoing(node);
     const taken = flows.filter(
-      (f) => f.id !== node.default && (!f.conditionExpression || evaluateCondition(f.conditionExpression, this.variables)),
+      (f) =>
+        f.id !== node.default &&
+        (!f.conditionExpression || evaluateCondition(f.conditionExpression, this.variables)),
     );
-    const chosen = taken.length > 0 ? taken : this.defaultFlow(flows, node) ? [this.defaultFlow(flows, node)!] : [];
+    const chosen =
+      taken.length > 0
+        ? taken
+        : this.defaultFlow(flows, node)
+          ? [this.defaultFlow(flows, node)!]
+          : [];
     if (chosen.length === 0) {
       this.fail(new BpmnExecutionError(`Inclusive gateway ${node.id} has no valid outgoing flow.`));
       return;
@@ -481,7 +498,12 @@ export class WorkflowEngine {
     const taken = flows.filter(
       (f) => !f.conditionExpression || evaluateCondition(f.conditionExpression, this.variables),
     );
-    const chosen = taken.length > 0 ? taken : this.defaultFlow(flows, node) ? [this.defaultFlow(flows, node)!] : flows.slice(0, 1);
+    const chosen =
+      taken.length > 0
+        ? taken
+        : this.defaultFlow(flows, node)
+          ? [this.defaultFlow(flows, node)!]
+          : flows.slice(0, 1);
     for (const flow of chosen) this.moveAlong(token, flow);
     this.discard(token);
   }
@@ -716,7 +738,12 @@ export class WorkflowEngine {
     this.completedNodes.add(token.nodeId);
     const node = token.scope.graph.node(token.nodeId);
     if (node) {
-      this.history.push({ nodeId: node.id, nodeKind: node.kind, event: 'complete', at: this.history.length });
+      this.history.push({
+        nodeId: node.id,
+        nodeKind: node.kind,
+        event: 'complete',
+        at: this.history.length,
+      });
     }
   }
 

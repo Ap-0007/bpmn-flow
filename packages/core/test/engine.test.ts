@@ -73,7 +73,9 @@ describe('parallel gateway', () => {
     expect(snap.status).toBe('completed');
     expect(order).toEqual(expect.arrayContaining(['A', 'B']));
     // End is reached exactly once (join synchronized, no double token).
-    expect(snap.history.filter((h) => h.nodeId === 'End' && h.event === 'complete')).toHaveLength(1);
+    expect(snap.history.filter((h) => h.nodeId === 'End' && h.event === 'complete')).toHaveLength(
+      1,
+    );
   });
 });
 
@@ -83,7 +85,9 @@ describe('inclusive gateway', () => {
     const snap = await engine(p, { variables: { a: true, b: true } }).start();
     expect(snap.completedNodes).toEqual(expect.arrayContaining(['X', 'Y', 'End']));
     expect(snap.completedNodes).not.toContain('Z');
-    expect(snap.history.filter((h) => h.nodeId === 'End' && h.event === 'complete')).toHaveLength(1);
+    expect(snap.history.filter((h) => h.nodeId === 'End' && h.event === 'complete')).toHaveLength(
+      1,
+    );
   });
 
   it('uses the default branch when no condition matches', async () => {
@@ -130,7 +134,9 @@ describe('boundary error event', () => {
 
   it('takes the happy path when the handler succeeds', async () => {
     const p = await process(BOUNDARY_ERROR);
-    const snap = await engine(p).registerHandler('Pay', () => undefined).start();
+    const snap = await engine(p)
+      .registerHandler('Pay', () => undefined)
+      .start();
     expect(snap.completedNodes).toContain('Fulfil');
     expect(snap.completedNodes).not.toContain('Refund');
   });
