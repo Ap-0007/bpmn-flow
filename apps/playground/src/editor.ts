@@ -1,4 +1,5 @@
 import { validateBpmn, type ValidationResult } from '@bpmn-flow/core';
+import { ensureLayout } from '@bpmn-flow/viewer';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 
 /** Blank diagram with a single start event, ready to be extended. */
@@ -39,8 +40,12 @@ export class BpmnEditor {
     this.fit();
   }
 
+  /**
+   * Importa um diagrama no editor. O `bpmn-js` exige interchange de diagrama,
+   * entao diagramas sem layout sao posicionados antes da importacao.
+   */
   async open(xml: string): Promise<void> {
-    await this.modeler.importXML(xml);
+    await this.modeler.importXML(await ensureLayout(xml));
     this.fit();
   }
 

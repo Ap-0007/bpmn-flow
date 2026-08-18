@@ -64,6 +64,7 @@ let nodesById = new Map<string, FlowNode>();
 let engine: WorkflowEngine | undefined;
 let unbindViewer: (() => void) | undefined;
 let editor: BpmnEditor | undefined;
+let editorXml: string | undefined;
 let remoteSamples = false;
 
 // --- Sample loading ----------------------------------------------------
@@ -239,10 +240,22 @@ function fail(error: unknown): void {
 // --- Editor (edit mode) ------------------------------------------------
 
 async function ensureEditor(): Promise<BpmnEditor> {
-  if (!editor) {
-    editor = new BpmnEditor(els.editorEl);
-    if (currentXml) await editor.open(currentXml).catch(() => editor?.newDiagram());
-    else await editor.newDiagram();
+  editor ??= new BpmnEditor(els.editorEl);
+  // Reabre sempre que o diagrama do modo executar mudou desde a ultima abertura,
+  // para o editor nunca mostrar um diagrama antigo.
+  if (currentXml && currentXml !== editorXml) {
+    try {
+      await editor.open(currentXml);
+      editorXml = currentXml;
+    } catch (error) {
+      await editor.newDiagram();
+      editorXml = undefined;
+      validationMessage(
+        `Nao foi possivel abrir o diagrama no editor: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  } else if (!currentXml && editorXml === undefined) {
+    await editor.newDiagram();
   }
   return editor;
 }
@@ -336,12 +349,17 @@ els.fit.addEventListener('click', () => viewer.fit());
 els.modeRun.addEventListener('click', () => void setMode('run'));
 els.modeEdit.addEventListener('click', () => void setMode('edit'));
 els.newDiagram.addEventListener('click', async () => {
-  await (await ensureEditor()).newDiagram();
+  const active = await ensureEditor();
+  await active.newDiagram();
+  editorXml = currentXml;
   validationMessage('Novo diagrama criado.', true);
 });
 els.editFile.addEventListener('change', async () => {
   const file = els.editFile.files?.[0];
-  if (file) await (await ensureEditor()).open(await file.text());
+  if (!file) return;
+  const xml = await file.text();
+  await (await ensureEditor()).open(xml);
+  editorXml = xml;
 });
 els.validate.addEventListener('click', () => void validate());
 els.save.addEventListener('click', () => void save());

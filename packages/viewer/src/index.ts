@@ -43,19 +43,16 @@ export class BpmnFlowViewer {
    * still render.
    */
   async load(xml: string): Promise<void> {
-    const renderable = hasDiagramInterchange(xml) ? xml : await this.layout(xml);
-    this.visualization.load(renderable, { fit: { type: FitType.Center } });
-    this.takenFlows.clear();
-  }
-
-  private async layout(xml: string): Promise<string> {
+    let renderable: string;
     try {
-      return await layoutProcess(xml);
+      renderable = await ensureLayout(xml);
     } catch {
       // Fall back to the original XML; bpmn-visualization will report if it
       // truly cannot render.
-      return xml;
+      renderable = xml;
     }
+    this.visualization.load(renderable, { fit: { type: FitType.Center } });
+    this.takenFlows.clear();
   }
 
   /** Fits the diagram to the viewport. */
@@ -144,6 +141,19 @@ export class BpmnFlowViewer {
 /** True when the XML already carries diagram interchange (layout) data. */
 export function hasDiagramInterchange(xml: string): boolean {
   return /BPMNDiagram|BPMNPlane|BPMNShape/.test(xml);
+}
+
+/**
+ * Returns XML that is guaranteed to carry diagram interchange.
+ *
+ * A diagram authored purely in terms of semantics (no layout) is positioned
+ * with `bpmn-auto-layout`; anything that already has DI is returned untouched.
+ * Useful for consumers that require DI, such as a `bpmn-js` modeler.
+ *
+ * @throws when the layout engine cannot process the XML.
+ */
+export async function ensureLayout(xml: string): Promise<string> {
+  return hasDiagramInterchange(xml) ? xml : await layoutProcess(xml);
 }
 
 export type { ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';

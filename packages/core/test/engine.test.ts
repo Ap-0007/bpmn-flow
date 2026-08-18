@@ -3,13 +3,17 @@ import { BpmnError, parseBpmn, WorkflowEngine } from '../src/index.js';
 import type { EngineOptions, ProcessModel } from '../src/index.js';
 import {
   BOUNDARY_ERROR,
+  BOUNDARY_NON_INTERRUPTING,
   CATCH_WAIT,
+  ENDLESS_LOOP,
   EVENT_BASED,
   EXCLUSIVE,
   INCLUSIVE,
   LINEAR,
   PARALLEL,
   SUBPROCESS,
+  SUBPROCESS_ERROR,
+  SUBPROCESS_TERMINATE,
   TERMINATE,
 } from './fixtures.js';
 
@@ -172,5 +176,69 @@ describe('auto mode', () => {
     const p = await process(EVENT_BASED);
     const snap = await engine(p, { mode: 'auto' }).start();
     expect(snap.status).toBe('completed');
+  });
+});
+
+describe('non-interrupting boundary event', () => {
+  it('runs the boundary branch while the activity keeps waiting', async () => {
+    const p = await process(BOUNDARY_NON_INTERRUPTING);
+    const eng = engine(p);
+    let snap = await eng.start();
+    expect(snap.tokens.find((token) => token.nodeId === 'Work')?.waitReason).toBe('userTask');
+
+    snap = await eng.signal('Escalated');
+    // The boundary branch ran to its own end event...
+    expect(snap.completedNodes).toContain('Notify');
+    // ...and the host task is still parked, waiting for a human.
+    const stillWaiting = snap.tokens.find((token) => token.nodeId === 'Work');
+    expect(stillWaiting?.waiting).toBe(true);
+    expect(snap.status).toBe('waiting');
+
+    snap = await eng.completeTask(stillWaiting!.id);
+    expect(snap.status).toBe('completed');
+    expect(snap.completedNodes).toContain('End');
+  });
+});
+
+describe('error end event inside a subprocess', () => {
+  it('is caught by the error boundary attached to the subprocess', async () => {
+    const p = await process(SUBPROCESS_ERROR);
+    const snap = await engine(p, { variables: { ok: false } }).start();
+    expect(snap.status).toBe('completed');
+    expect(snap.completedNodes).toContain('Recover');
+    expect(snap.completedNodes).not.toContain('After');
+  });
+
+  it('completes the subprocess normally when no error is raised', async () => {
+    const p = await process(SUBPROCESS_ERROR);
+    const snap = await engine(p, { variables: { ok: true } }).start();
+    expect(snap.status).toBe('completed');
+    expect(snap.completedNodes).toContain('After');
+    expect(snap.completedNodes).not.toContain('Recover');
+  });
+});
+
+describe('terminate inside a subprocess', () => {
+  it('cancels only the child scope and resumes the parent', async () => {
+    const p = await process(SUBPROCESS_TERMINATE);
+    const snap = await engine(p).start();
+    expect(snap.status).toBe('completed');
+    // The sibling user task was cancelled by terminate...
+    expect(snap.completedNodes).not.toContain('SubEnd');
+    // ...but the parent process carried on past the subprocess.
+    expect(snap.completedNodes).toContain('After');
+    expect(snap.completedNodes).toContain('End');
+  });
+});
+
+describe('maxSteps guard', () => {
+  it('fails instead of looping forever', async () => {
+    const p = await process(ENDLESS_LOOP);
+    const eng = engine(p, { maxSteps: 50 });
+    const errors: Error[] = [];
+    eng.on('error', ({ error }) => errors.push(error));
+    const snap = await eng.start();
+    expect(snap.status).toBe('failed');
+    expect(errors[0]?.message).toMatch(/maxSteps/);
   });
 });

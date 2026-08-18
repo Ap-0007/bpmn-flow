@@ -152,3 +152,82 @@ export const CATCH_WAIT = wrap(`
     <bpmn:endEvent id="End" />
     <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="WaitMsg" />
     <bpmn:sequenceFlow id="f1" sourceRef="WaitMsg" targetRef="End" />`);
+
+export const BOUNDARY_NON_INTERRUPTING = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="Escalated" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Work" />
+    <bpmn:boundaryEvent id="OnPing" attachedToRef="Work" cancelActivity="false">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Notify" />
+    <bpmn:endEvent id="EndNotify" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Work" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Work" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="OnPing" targetRef="Notify" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Notify" targetRef="EndNotify" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const SUBPROCESS_ERROR = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:error id="Err" name="OutOfStock" errorCode="OUT_OF_STOCK" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Sub">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:exclusiveGateway id="SubGw" default="sFail" />
+      <bpmn:endEvent id="SubOk" />
+      <bpmn:endEvent id="SubFail">
+        <bpmn:errorEventDefinition errorRef="Err" />
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="s0" sourceRef="SubStart" targetRef="SubGw" />
+      <bpmn:sequenceFlow id="sOk" sourceRef="SubGw" targetRef="SubOk">${cond('ok === true')}</bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="sFail" sourceRef="SubGw" targetRef="SubFail" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="OnSubError" attachedToRef="Sub">
+      <bpmn:errorEventDefinition errorRef="Err" />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="After" />
+    <bpmn:task id="Recover" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndRecovered" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Sub" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="OnSubError" targetRef="Recover" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Recover" targetRef="EndRecovered" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const SUBPROCESS_TERMINATE = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Sub">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:parallelGateway id="SubSplit" />
+      <bpmn:userTask id="SubWork" />
+      <bpmn:endEvent id="SubStop">
+        <bpmn:terminateEventDefinition />
+      </bpmn:endEvent>
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s0" sourceRef="SubStart" targetRef="SubSplit" />
+      <bpmn:sequenceFlow id="sa" sourceRef="SubSplit" targetRef="SubWork" />
+      <bpmn:sequenceFlow id="sb" sourceRef="SubSplit" targetRef="SubStop" />
+      <bpmn:sequenceFlow id="sa2" sourceRef="SubWork" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:task id="After" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Sub" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />`);
+
+export const ENDLESS_LOOP = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:task id="Spin" />
+    <bpmn:exclusiveGateway id="Again" default="fBack" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Spin" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Spin" targetRef="Again" />
+    <bpmn:sequenceFlow id="fBack" sourceRef="Again" targetRef="Spin" />`);
