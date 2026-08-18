@@ -5,7 +5,9 @@ import {
   type EngineMode,
   type ExecutionSnapshot,
   type ExecutionStatus,
+  type PendingTask,
   type ProcessModel,
+  type TaskFilter,
 } from '@bpmn-flow/core';
 import type { SessionStorage } from './storage.js';
 
@@ -19,6 +21,11 @@ export interface Session {
   id: string;
   xml: string;
   snapshot: ExecutionSnapshot;
+}
+
+/** A pending task plus the session it belongs to. */
+export interface InboxTask extends PendingTask {
+  sessionId: string;
 }
 
 /** Lightweight listing entry: no diagram XML, no full history. */
@@ -70,6 +77,34 @@ export class SessionStore {
     session.snapshot = await session.engine.completeTask(tokenId, output);
     await this.persist(session);
     return view(session);
+  }
+
+  /** Work waiting on a person in one session. */
+  async tasks(id: string, filter?: TaskFilter): Promise<PendingTask[]> {
+    const session = await this.require(id);
+    return session.engine.tasks(filter);
+  }
+
+  /**
+   * Work waiting on a person across every session — the inbox. Sessions that
+   * already finished are skipped without rebuilding their engine.
+   */
+  async inbox(filter?: TaskFilter): Promise<InboxTask[]> {
+    const ids = new Set<string>();
+    for (const record of (await this.storage?.list()) ?? []) {
+      if (record.state.tokens.some((token) => token.waiting !== undefined)) ids.add(record.id);
+    }
+    for (const [id, session] of this.cache) {
+      if (session.snapshot.tokens.some((token) => token.waiting)) ids.add(id);
+    }
+
+    const inbox: InboxTask[] = [];
+    for (const id of ids) {
+      const session = await this.load(id);
+      if (!session) continue;
+      for (const task of session.engine.tasks(filter)) inbox.push({ sessionId: id, ...task });
+    }
+    return inbox;
   }
 
   /** Fires the timers of one session that are due at `now`. */

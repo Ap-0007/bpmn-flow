@@ -83,6 +83,16 @@ para no evento — ou em que a atividade com evento de borda começa a esperar.
 Um timer de borda é desarmado quando a atividade termina antes do prazo, e o
 vencimento faz parte do estado serializado, então sobrevive a um restart.
 
+## Raias e atribuição
+
+`laneSet`/`lane` (incluindo raias aninhadas) associam cada nó a uma raia, cujo
+nome vai para `FlowNode.lane`. `potentialOwner` e `performer` viram
+`FlowNode.candidates` — a expressão formal é lida como texto e dividida por
+vírgula, de modo que `gerentes, diretoria` são dois papéis.
+
+O motor não faz controle de acesso: ele expõe a atribuição em `tasks()` e cabe à
+aplicação decidir quem pode concluir a tarefa.
+
 ## Dados e escopo de variáveis
 
 O processo, cada subprocesso e cada instância de multi-instância formam uma

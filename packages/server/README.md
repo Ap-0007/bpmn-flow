@@ -38,21 +38,34 @@ Variáveis de ambiente equivalentes: `PORT`, `STATIC_DIR`, `SAMPLES_DIR`,
 
 ## Endpoints
 
-| Método e rota                     | Corpo                        | Descrição                         |
-| --------------------------------- | ---------------------------- | --------------------------------- |
-| `GET /api/health`                 | -                            | Verificação de disponibilidade.   |
-| `POST /api/parse`                 | `{ xml }`                    | Modelo normalizado do diagrama.   |
-| `POST /api/validate`              | `{ xml }`                    | Valida a estrutura BPMN.          |
-| `POST /api/sessions`              | `{ xml, mode?, variables? }` | Cria e inicia uma execução.       |
-| `GET /api/sessions`               | -                            | Resumo das sessões conhecidas.    |
-| `GET /api/sessions/:id`           | -                            | Snapshot atual da sessão.         |
-| `POST /api/sessions/:id/complete` | `{ tokenId, output? }`       | Conclui uma tarefa de usuário.    |
-| `POST /api/sessions/:id/signal`   | `{ name, output? }`          | Entrega um sinal/evento.          |
-| `POST /api/sessions/:id/tick`     | `{ now? }`                   | Dispara os timers vencidos.       |
-| `DELETE /api/sessions/:id`        | -                            | Remove a sessão.                  |
-| `GET /api/samples`                | -                            | Lista os `.bpmn` do diretório.    |
-| `GET /api/samples/:name`          | -                            | Retorna o XML de um exemplo.      |
-| `POST /api/samples`               | `{ name, xml }`              | Valida e salva um `.bpmn` no dir. |
+| Método e rota                     | Corpo                        | Descrição                             |
+| --------------------------------- | ---------------------------- | ------------------------------------- |
+| `GET /api/health`                 | -                            | Verificação de disponibilidade.       |
+| `POST /api/parse`                 | `{ xml }`                    | Modelo normalizado do diagrama.       |
+| `POST /api/validate`              | `{ xml }`                    | Valida a estrutura BPMN.              |
+| `POST /api/sessions`              | `{ xml, mode?, variables? }` | Cria e inicia uma execução.           |
+| `GET /api/sessions`               | -                            | Resumo das sessões conhecidas.        |
+| `GET /api/sessions/:id`           | -                            | Snapshot atual da sessão.             |
+| `POST /api/sessions/:id/complete` | `{ tokenId, output? }`       | Conclui uma tarefa de usuário.        |
+| `POST /api/sessions/:id/signal`   | `{ name, output? }`          | Entrega um sinal/evento.              |
+| `POST /api/sessions/:id/tick`     | `{ now? }`                   | Dispara os timers vencidos.           |
+| `GET /api/sessions/:id/tasks`     | -                            | Tarefas pendentes da sessão.          |
+| `GET /api/tasks`                  | -                            | Caixa de entrada de todas as sessões. |
+| `DELETE /api/sessions/:id`        | -                            | Remove a sessão.                      |
+| `GET /api/samples`                | -                            | Lista os `.bpmn` do diretório.        |
+| `GET /api/samples/:name`          | -                            | Retorna o XML de um exemplo.          |
+| `POST /api/samples`               | `{ name, xml }`              | Valida e salva um `.bpmn` no dir.     |
+
+## Caixa de entrada
+
+`GET /api/tasks` percorre as sessões (inclusive as só existentes em disco) e
+devolve o trabalho pendente com `sessionId`, raia, papéis e variáveis. Aceita
+`?role=`, `?reason=` e `?nodeId=`; sessões concluídas são ignoradas sem
+reconstruir o motor.
+
+```bash
+curl 'http://localhost:3000/api/tasks?role=gerentes'
+```
 
 ## Timers
 

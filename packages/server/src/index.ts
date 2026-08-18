@@ -5,7 +5,7 @@ import { FileSessionStorage } from './storage.js';
 
 export { createApp, type AppOptions } from './app.js';
 export { SessionStore, SessionNotFoundError } from './sessions.js';
-export type { CreateSessionInput, Session, SessionSummary } from './sessions.js';
+export type { CreateSessionInput, InboxTask, Session, SessionSummary } from './sessions.js';
 export { FileSessionStorage, InvalidSessionIdError } from './storage.js';
 export type { SessionRecord, SessionStorage } from './storage.js';
 export { SampleProvider, type SampleInfo } from './samples.js';

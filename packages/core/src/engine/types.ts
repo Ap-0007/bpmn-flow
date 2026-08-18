@@ -16,6 +16,35 @@ export interface TokenSnapshot {
   waitReason?: WaitReason;
 }
 
+/**
+ * A unit of work waiting for someone (or something) outside the engine: a user
+ * task, a receive task or a catch event.
+ */
+export interface PendingTask {
+  tokenId: string;
+  nodeId: string;
+  nodeKind: ElementKind;
+  name?: string;
+  reason: WaitReason;
+  scopeId: string;
+  /** Lane the activity sits in, when the diagram declares swimlanes. */
+  lane?: string;
+  /** Roles/people from `bpmn:potentialOwner`. Empty means anyone. */
+  candidates: string[];
+  /** Variables visible to the activity (its scope chain, flattened). */
+  variables: Record<string, unknown>;
+}
+
+/** Narrows a task list. An omitted field does not filter. */
+export interface TaskFilter {
+  /** Keeps tasks whose lane or candidate roles include this name. */
+  role?: string;
+  /** Keeps tasks parked for these reasons. */
+  reason?: WaitReason | WaitReason[];
+  /** Keeps tasks on this activity. */
+  nodeId?: string;
+}
+
 export interface HistoryEntry {
   nodeId: string;
   nodeKind: ElementKind;

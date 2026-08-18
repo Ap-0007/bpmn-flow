@@ -55,6 +55,9 @@ Métodos:
 - `getState()`: estado completo e serializável da execução, incluindo buffers de
   junção, escopos e eventos armados.
 - `resume()`: continua uma execução restaurada até concluir ou bloquear.
+- `tasks(filter?)`: trabalho pendente (tarefa de usuário, receive task, evento
+  de captura) com raia, papéis e variáveis visíveis; filtra por `role`,
+  `reason` e `nodeId`.
 - `tick(now?)`: dispara os timers vencidos e continua a execução.
 - `dueTimers()` / `nextTimerAt()`: timers pendentes e o próximo vencimento.
 

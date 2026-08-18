@@ -118,3 +118,46 @@ describe('timers over sessions', () => {
     expect((await restarted.get(created.id))?.snapshot.status).toBe('completed');
   });
 });
+
+const LANE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  targetNamespace="http://bpmn-flow.test" id="Defs">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:laneSet id="Lanes">
+      <bpmn:lane id="L1" name="Vendas">
+        <bpmn:flowNodeRef>Registrar</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Registrar" name="Registrar pedido" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Registrar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Registrar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+describe('inbox across sessions', () => {
+  it('collects pending tasks from every session and filters by role', async () => {
+    const store = new SessionStore(new FileSessionStorage(dir));
+    const first = await store.create({ xml: LANE_XML });
+    await store.create({ xml: LANE_XML });
+
+    const inbox = await store.inbox();
+    expect(inbox).toHaveLength(2);
+    expect(inbox.every((task) => task.nodeId === 'Registrar')).toBe(true);
+    expect(inbox.some((task) => task.sessionId === first.id)).toBe(true);
+
+    expect(await store.inbox({ role: 'Vendas' })).toHaveLength(2);
+    expect(await store.inbox({ role: 'Financeiro' })).toHaveLength(0);
+  });
+
+  it('drops a session from the inbox once its work is done', async () => {
+    const store = new SessionStore(new FileSessionStorage(dir));
+    const created = await store.create({ xml: LANE_XML });
+    const [task] = await store.tasks(created.id);
+
+    await store.complete(created.id, task!.tokenId);
+
+    expect(await store.inbox()).toHaveLength(0);
+  });
+});

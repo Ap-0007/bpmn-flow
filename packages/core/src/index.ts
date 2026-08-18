@@ -29,6 +29,8 @@ export type {
   ExecutionSnapshot,
   ExecutionStatus,
   HistoryEntry,
+  PendingTask,
+  TaskFilter,
   TokenSnapshot,
   WaitReason,
 } from './engine/types.js';

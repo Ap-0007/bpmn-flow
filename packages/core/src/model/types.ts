@@ -94,6 +94,14 @@ export interface FlowNode {
 
   /** Multi-instance or standard loop attached to the activity. */
   loop?: LoopCharacteristics;
+
+  /** Name of the lane (swimlane) the node belongs to, when the diagram has one. */
+  lane?: string;
+  /**
+   * Roles or people expected to perform the activity, read from
+   * `bpmn:potentialOwner` / `bpmn:performer`.
+   */
+  candidates?: string[];
 }
 
 /** A participant (pool) in a collaboration. */

@@ -370,3 +370,28 @@ export const TIMER_BOUNDARY = wrap(`
     <bpmn:sequenceFlow id="f1" sourceRef="Approve" targetRef="End" />
     <bpmn:sequenceFlow id="fb" sourceRef="Deadline" targetRef="Escalate" />
     <bpmn:sequenceFlow id="fb2" sourceRef="Escalate" targetRef="EndEscalated" />`);
+
+export const LANES_AND_ROLES = wrap(`
+    <bpmn:laneSet id="Lanes">
+      <bpmn:lane id="LaneVendas" name="Vendas">
+        <bpmn:flowNodeRef>Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Registrar</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="LaneFinanceiro" name="Financeiro">
+        <bpmn:flowNodeRef>Aprovar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Registrar" name="Registrar pedido" />
+    <bpmn:userTask id="Aprovar" name="Aprovar pagamento">
+      <bpmn:potentialOwner>
+        <bpmn:resourceAssignmentExpression>
+          <bpmn:formalExpression>gerentes, diretoria</bpmn:formalExpression>
+        </bpmn:resourceAssignmentExpression>
+      </bpmn:potentialOwner>
+    </bpmn:userTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Registrar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Registrar" targetRef="Aprovar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Aprovar" targetRef="End" />`);

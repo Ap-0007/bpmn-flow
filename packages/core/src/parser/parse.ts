@@ -18,7 +18,13 @@ import type {
   ProcessModel,
   SequenceFlow,
 } from '../model/types.js';
-import type { MdElement, MdEventDefinition, MdLoopCharacteristics } from './moddle-types.js';
+import type {
+  MdElement,
+  MdEventDefinition,
+  MdLane,
+  MdLoopCharacteristics,
+  MdResourceRole,
+} from './moddle-types.js';
 
 const ELEMENT_KINDS = new Set<string>([
   ...EVENT_KINDS,
@@ -97,6 +103,33 @@ function readLoopCharacteristics(
   return loop;
 }
 
+/** Roles from `bpmn:potentialOwner` / `bpmn:performer` resource assignments. */
+function readCandidates(resources: MdResourceRole[] | undefined): string[] {
+  if (!resources) return [];
+  const names: string[] = [];
+  for (const resource of resources) {
+    const expression = resource.resourceAssignmentExpression?.expression?.body ?? resource.name;
+    if (!expression) continue;
+    // A single expression may list several roles: "gerentes, diretoria".
+    for (const part of expression.split(',')) {
+      const name = part.trim();
+      if (name) names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Maps every flow node id to the name of the lane containing it. */
+function readLaneAssignments(lanes: MdLane[] | undefined, into: Map<string, string>): void {
+  for (const lane of lanes ?? []) {
+    const name = lane.name ?? lane.id;
+    for (const ref of lane.flowNodeRef ?? []) {
+      if (ref.id && name) into.set(ref.id, name);
+    }
+    readLaneAssignments(lane.childLaneSet?.lanes, into);
+  }
+}
+
 interface ScopeAccumulator {
   nodes: FlowNode[];
   flows: SequenceFlow[];
@@ -123,6 +156,8 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
     if (el.calledElement) node.calledElement = el.calledElement;
     const loop = readLoopCharacteristics(el.loopCharacteristics);
     if (loop) node.loop = loop;
+    const candidates = readCandidates(el.resources);
+    if (candidates.length > 0) node.candidates = candidates;
     if (el.triggeredByEvent) node.triggeredByEvent = true;
     if (el.flowElements && el.flowElements.length > 0) {
       const inner = readScope(el.flowElements);
@@ -167,6 +202,14 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
 
 function readProcess(el: MdElement): ProcessModel {
   const scope = readScope(el.flowElements ?? []);
+
+  const lanes = new Map<string, string>();
+  for (const laneSet of el.laneSets ?? []) readLaneAssignments(laneSet.lanes, lanes);
+  for (const node of scope.nodes) {
+    const lane = lanes.get(node.id);
+    if (lane) node.lane = lane;
+  }
+
   const process: ProcessModel = {
     id: el.id ?? 'process',
     isExecutable: el.isExecutable !== false,

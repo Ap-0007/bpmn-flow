@@ -19,6 +19,8 @@ import type {
   ExecutionSnapshot,
   ExecutionStatus,
   HistoryEntry,
+  PendingTask,
+  TaskFilter,
   TokenSnapshot,
   WaitReason,
 } from './types.js';
@@ -186,6 +188,34 @@ export class WorkflowEngine {
     }
     await this.drain();
     return this.snapshot();
+  }
+
+  /**
+   * Work currently waiting on a person or an external trigger: user tasks,
+   * receive tasks and catch events, with the lane and the roles that may act on
+   * them. This is the task list a UI renders as an inbox.
+   */
+  tasks(filter: TaskFilter = {}): PendingTask[] {
+    const tasks: PendingTask[] = [];
+    for (const token of this.waiting.values()) {
+      const node = token.scope.graph.node(token.nodeId);
+      if (!node || !token.waiting) continue;
+      const candidates = node.candidates ?? [];
+      const task: PendingTask = {
+        tokenId: token.id,
+        nodeId: node.id,
+        nodeKind: node.kind,
+        reason: token.waiting,
+        scopeId: token.scope.id,
+        candidates,
+        variables: this.mergedVariables(token.scope),
+        ...(node.name ? { name: node.name } : {}),
+        ...(node.lane ? { lane: node.lane } : {}),
+      };
+      if (!matchesFilter(task, filter)) continue;
+      tasks.push(task);
+    }
+    return tasks;
   }
 
   /**
@@ -1455,6 +1485,19 @@ export class WorkflowEngine {
   private emitFinal(): void {
     this.emitter.emit('process.end', { processId: this.rootGraph.process.id, status: this.status });
   }
+}
+
+/** Applies a {@link TaskFilter} to one task. */
+function matchesFilter(task: PendingTask, filter: TaskFilter): boolean {
+  if (filter.nodeId && task.nodeId !== filter.nodeId) return false;
+  if (filter.reason) {
+    const reasons = Array.isArray(filter.reason) ? filter.reason : [filter.reason];
+    if (!reasons.includes(task.reason)) return false;
+  }
+  if (filter.role && task.lane !== filter.role && !task.candidates.includes(filter.role)) {
+    return false;
+  }
+  return true;
 }
 
 /** Timers are unique per (token, timer node) pair. */

@@ -38,6 +38,22 @@ export interface MdLoopCharacteristics {
   loopMaximum?: number | string;
 }
 
+/** `bpmn:PotentialOwner` / `bpmn:Performer` inside an activity. */
+export interface MdResourceRole {
+  $type: string;
+  name?: string;
+  resourceAssignmentExpression?: { expression?: { body?: string } };
+}
+
+/** `bpmn:Lane` with the flow nodes it contains (references resolved). */
+export interface MdLane {
+  $type: string;
+  id?: string;
+  name?: string;
+  flowNodeRef?: MdRef[];
+  childLaneSet?: { lanes?: MdLane[] };
+}
+
 export interface MdElement {
   $type: string;
   id?: string;
@@ -68,6 +84,12 @@ export interface MdElement {
 
   // activities: multi-instance / standard loop
   loopCharacteristics?: MdLoopCharacteristics;
+
+  // activities: who is expected to perform the work
+  resources?: MdResourceRole[];
+
+  // process: swimlanes
+  laneSets?: { lanes?: MdLane[] }[];
 
   // sequence flow
   sourceRef?: MdRef;

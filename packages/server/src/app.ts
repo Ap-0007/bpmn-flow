@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { parseBpmn, validateBpmn } from '@bpmn-flow/core';
+import { parseBpmn, validateBpmn, type TaskFilter, type WaitReason } from '@bpmn-flow/core';
 import { Hono } from 'hono';
 import { SampleProvider } from './samples.js';
 import { SessionStore, type CreateSessionInput } from './sessions.js';
@@ -18,6 +18,15 @@ export interface AppOptions {
   dataDir?: string;
   /** Session registry to use. Built from `dataDir` when omitted. */
   sessions?: SessionStore;
+}
+
+/** Builds a task filter from `?role=&reason=&nodeId=`. */
+function taskFilter(query: Record<string, string>): TaskFilter {
+  return {
+    ...(query.role ? { role: query.role } : {}),
+    ...(query.nodeId ? { nodeId: query.nodeId } : {}),
+    ...(query.reason ? { reason: query.reason as WaitReason } : {}),
+  };
 }
 
 const MIME: Record<string, string> = {
@@ -75,6 +84,12 @@ export function createApp(options: AppOptions = {}): Hono {
     }>();
     return c.json(await sessions.complete(c.req.param('id'), tokenId, output));
   });
+
+  app.get('/api/tasks', async (c) => c.json(await sessions.inbox(taskFilter(c.req.query()))));
+
+  app.get('/api/sessions/:id/tasks', async (c) =>
+    c.json(await sessions.tasks(c.req.param('id'), taskFilter(c.req.query()))),
+  );
 
   app.post('/api/sessions/:id/tick', async (c) => {
     const body = await c.req.json<{ now?: number }>().catch(() => ({}) as { now?: number });

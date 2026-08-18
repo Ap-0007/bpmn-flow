@@ -133,6 +133,25 @@ tarefa): [`examples/quickstart.mjs`](examples/quickstart.mjs).
 npm run build && node examples/quickstart.mjs
 ```
 
+## Caixa de entrada: quem executa o quê
+
+Raias e `potentialOwner` viram atribuição, e o motor expõe a lista de trabalho
+pendente — a caixa de entrada que uma UI renderiza:
+
+```ts
+engine.tasks();
+// [{ tokenId, nodeId: 'Aprovar', name: 'Aprovar pagamento',
+//    lane: 'Financeiro', candidates: ['gerentes'], reason: 'userTask',
+//    variables: { pedido: 42 } }]
+
+engine.tasks({ role: 'gerentes' }); // só o que esse papel pode executar
+```
+
+O filtro casa tanto com a raia quanto com os papéis declarados. Numa atividade
+multi-instância, cada instância aparece como uma tarefa própria, com o seu item.
+No servidor, `GET /api/tasks?role=gerentes` faz o mesmo atravessando todas as
+sessões.
+
 ## Timers
 
 Eventos de timer viram data de vencimento. O motor não tem relógio próprio: ele
@@ -298,7 +317,8 @@ modo que reiniciar o servidor não perde execuções em andamento.
   inclusivo (junção por alcançabilidade), baseado em evento e complexo.
 - Repetição: multi-instância paralela e sequencial (por coleção ou cardinalidade,
   com condição de conclusão e coleção de saída) e loop padrão.
-- Fluxos de sequência com condições e colaboração (pools e message flows).
+- Fluxos de sequência com condições, colaboração (pools e message flows) e
+  raias (lanes) com os papéis de `potentialOwner`.
 
 ## Limitações conhecidas
 
