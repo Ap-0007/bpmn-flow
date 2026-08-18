@@ -1,127 +1,115 @@
-# 🎨 BPMN Visualization - Padrão Oficial
+# Aderência ao BPMN 2.0
 
-## ✨ Melhorias Implementadas
+Este documento registra como o `@bpmn-flow/core` implementa a semântica de
+execução da especificação BPMN 2.0 (OMG) e onde ela é deliberadamente
+simplificada. Toda divergência precisa estar listada aqui.
 
-### 📋 **Baseado no repositório oficial:**
+Referência de implementação: `packages/core/src/engine/engine.ts`.
 
-- **Repository**: [process-analytics/bpmn-visualization-js](https://github.com/process-analytics/bpmn-visualization-js)
-- **Examples**: [process-analytics/bpmn-visualization-examples](https://github.com/process-analytics/bpmn-visualization-examples)
+## Modelo de execução
 
-### 🎯 **Estilos Padrão BPMN Oficial:**
+A execução é baseada em **tokens**, como na especificação: um token representa
+uma linha de controle posicionada em um nó. O motor mantém uma fila de tokens
+prontos e a processa até que todos concluam, falhem ou fiquem em espera.
 
-#### **Cores Padrão:**
+Escopos aninhados representam o processo raiz e cada instância de subprocesso.
+Um escopo termina quando não sobra nenhum token nele.
 
-- **Fill Color**: `#ffffff` (branco)
-- **Stroke Color**: `#000000` (preto)
-- **Font**: `Arial, Helvetica, sans-serif` (11px)
+## Eventos
 
-#### **Eventos:**
+| Elemento                          | Comportamento implementado                                                                          |
+| --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `startEvent`                      | Cria o token inicial do escopo e segue pelos fluxos de saída.                                       |
+| `endEvent` (none)                 | Consome o token; o escopo conclui quando não há mais tokens.                                        |
+| `endEvent` (terminate)            | Cancela **todos** os tokens do escopo imediatamente.                                                |
+| `endEvent` (error)                | Consome o token e levanta o erro no escopo pai, procurando um evento de borda correspondente.       |
+| `intermediateThrowEvent`          | Pass-through: conclui e segue adiante.                                                              |
+| `intermediateCatchEvent`          | Estaciona o token (`waitReason: "catchEvent"`) até `signal()`.                                      |
+| `boundaryEvent` interrompente     | Descarta o token da atividade hospedeira (ou o escopo do subprocesso) e segue pelo fluxo do evento. |
+| `boundaryEvent` não interrompente | Mantém a atividade em execução e cria um token adicional no fluxo do evento.                        |
 
-- **Start Events**: Borda verde (`#008000`), fundo branco
-- **End Events**: Borda vermelha (`#cc0000`), borda espessa (3px)
-- **Intermediate Events**: Padrão oficial
+Definições de evento reconhecidas pelo parser: `message`, `timer`, `error`,
+`signal`, `escalation`, `conditional`, `compensation`, `cancel`, `terminate` e
+`link`. As que exigem gatilho externo são resolvidas por `signal()`.
 
-#### **Atividades (Tarefas):**
+## Atividades
 
-- **Cantos arredondados**: 8px (especificação BPMN)
-- **Ícones padrão**: Baseados no repositório oficial
-  - 👤 **User Task**: Ícone de pessoa
-  - ⚙️ **Service Task**: Ícone de engrenagem
-  - 📄 **Script Task**: Ícone de documento
-  - 📊 **Business Rule Task**: Ícone de tabela
-  - ✋ **Manual Task**: Ícone de mão
-  - 📤 **Send Task**: Ícone de envio
-  - 📥 **Receive Task**: Ícone de recebimento
+- `userTask` e `receiveTask` **sem handler** param a execução
+  (`waitReason: "userTask"` / `"receiveTask"`) e são retomadas com
+  `completeTask()`.
+- As demais tarefas sem handler são pass-through — a especificação não define o
+  trabalho realizado, apenas o fluxo de controle.
+- Com handler registrado, o retorno do handler é mesclado nas variáveis do
+  processo. Lançar `BpmnError` procura um evento de borda de erro na atividade;
+  sem correspondência, a execução falha.
+- `subProcess`, `transaction` e `adHocSubProcess` criam um escopo filho e
+  suspendem o token pai até a conclusão do escopo.
+- `callActivity` executa o processo referenciado quando ele está no mesmo
+  modelo; caso contrário é pass-through (ver divergências).
 
-#### **Gateways:**
+## Gateways
 
-- **Formato losango**: Conforme especificação BPMN
-- **Símbolos padrão**:
-  - ❌ **Exclusive**: X (exclusivo)
-  - ➕ **Parallel**: + (paralelo)
-  - ⭕ **Inclusive**: O (inclusivo)
-  - 🎯 **Event-Based**: Círculos duplos
-  - ✴️ **Complex**: Asterisco
+### Exclusivo (XOR)
 
-#### **Containers:**
+Avalia os fluxos de saída na ordem do documento e toma o **primeiro** cuja
+condição é verdadeira, ignorando o fluxo default. Se nenhum casar, usa o
+default. Sem default e sem condição verdadeira, a execução falha — conforme a
+especificação, que trata isso como erro de modelagem.
 
-- **Pools**: Fundo azul claro (`#dbefff`)
-- **Lanes**: Fundo cinza claro (`#edeef5`)
-- **Grid sutil**: Padrão de fundo com linhas
+### Paralelo (AND)
 
-### 🎨 **Recursos Visuais:**
+- **Divisão**: cria um token em cada fluxo de saída.
+- **Junção**: contabiliza um token por fluxo de entrada e só prossegue quando
+  todos chegaram, consumindo exatamente um de cada (o excedente permanece
+  contabilizado para uma próxima rodada, como manda a semântica de instâncias
+  múltiplas de um mesmo fluxo).
 
-#### **Efeitos Interativos:**
+### Inclusivo (OR)
 
-- **Hover**: Sombra suave nos elementos
-- **Click**: Eventos customizados para integração
-- **Cursor**: Pointer nos elementos clicáveis
+- **Divisão**: toma **todos** os fluxos cuja condição é verdadeira; se nenhum
+  for, toma o default.
+- **Junção**: os tokens ficam em buffer, e a junção dispara quando o motor
+  atinge quiescência e **nenhum outro token do escopo consegue mais alcançar o
+  nó de junção** (análise de alcançabilidade sobre o grafo). É a leitura da
+  especificação que evita tanto deadlock quanto disparo prematuro; contar
+  fluxos de entrada não funciona quando a divisão foi condicional.
 
-#### **Grid e Layout:**
+### Baseado em evento
 
-- **Grid de fundo**: Linhas sutis para orientação
-- **Espaçamento**: Seguindo melhores práticas BPMN
-- **Tipografia**: Fonte padrão oficial
+Arma todos os eventos-alvo dos fluxos de saída. O primeiro gatilho recebido
+vence, e as alternativas são canceladas.
 
-### 📁 **Estrutura de Arquivos:**
+### Complexo
 
-```
-src/lib/
-├── bpmn-visualization-standard.js  ← Nova biblioteca padrão
-├── bpmn-visualization-mock.js      ← Versão anterior
-└── bpmn-visualization-real.js      ← Para biblioteca oficial
-```
+Sem semântica própria: comporta-se como inclusivo (ver divergências).
 
-### 🔄 **Diagramas Implementados:**
+## Fluxos de sequência
 
-#### **1. Processo Simples:**
+Condições (`conditionExpression`) são avaliadas como JavaScript sobre as
+variáveis do processo, com suporte ao invólucro `${ ... }`. Uma expressão que
+lança ou não retorna `true` é tratada como falsa (fail-closed).
 
-- Evento inicial → Tarefa → Gateway → Dois fins
-- Ícones de tarefa de usuário e serviço
-- Gateway exclusivo com símbolos padrão
+## Divergências assumidas
 
-#### **2. Processo de Compras:**
+1. **Timers não são agendados.** `timeDuration`, `timeDate` e `timeCycle` são
+   lidos para o modelo, mas o motor não tem relógio: o token fica em espera até
+   `signal()`. Agendamento é responsabilidade de quem embute a biblioteca.
+2. **Gateway complexo tratado como inclusivo.** A especificação delega o
+   comportamento a uma expressão de ativação; a aproximação evita travar
+   diagramas que usam o símbolo sem definir a expressão.
+3. **Modo `auto`.** Fora da especificação, existe para simular execuções:
+   resolve automaticamente qualquer espera e, quando um gateway não tem default
+   nem condição verdadeira, toma o primeiro fluxo de saída. O modo `automation`
+   (padrão) segue a especificação.
+4. **Multi-instância e compensação** são reconhecidas no modelo, mas não têm
+   semântica de execução própria.
+5. **Call activity sem processo no modelo** é pass-through em vez de erro, para
+   permitir executar diagramas parcialmente definidos.
+6. **Sem persistência ou transações.** O estado vive em memória; `transaction`
+   se comporta como subprocesso comum, sem rollback.
 
-- **Pools e Lanes**: Solicitante, Aprovador, Compras
-- **Fluxo entre lanes**: Representação visual correta
-- **Múltiplos tipos de tarefa**: User, Service, Send
+## Layout e renderização
 
-#### **3. Gestão de Projeto:**
-
-- **Gateway paralelo**: Execução simultânea
-- **Sincronização**: Convergência de fluxos
-- **Diversos tipos de evento**: Message, Error, Timer
-
-### 🚀 **Como Usar:**
-
-```javascript
-// A biblioteca automaticamente detecta o tipo de processo
-// e aplica o layout e estilos apropriados
-
-const bpmnVisualization = new BpmnVisualization({
-  container: "bpmn-container",
-});
-
-// Carrega arquivo BPMN com estilos padrão
-await bpmnVisualization.load(bpmnContent);
-```
-
-### 📊 **Compatibilidade:**
-
-- ✅ **API compatível** com bpmn-visualization-js oficial
-- ✅ **Estilos padrão** BPMN 2.0
-- ✅ **Ícones oficiais** baseados em especificação
-- ✅ **Interatividade** completa
-- ✅ **Responsivo** para diferentes tamanhos
-
-### 🎯 **Próximas Melhorias:**
-
-1. **Integração com biblioteca real** do bpmn-visualization-js
-2. **Mais ícones de evento** (Timer, Signal, Message, etc.)
-3. **Suporte a temas customizados**
-4. **Exportação para SVG/PNG**
-5. **Animações de fluxo** em tempo real
-
----
-
-**Resultado**: Agora o visualizador BPMN segue **exatamente** os padrões visuais oficiais do [process-analytics/bpmn-visualization-js](https://github.com/process-analytics/bpmn-visualization-js)! 🎉
+O modelo normalizado ignora a interchange de diagrama (DI). A renderização usa o
+XML original; diagramas sem DI recebem posicionamento automático no viewer
+(`bpmn-auto-layout`). O editor `bpmn-js` do playground, porém, exige DI.

@@ -1,80 +1,38 @@
-# 📋 Lista de Arquivos BPMN Disponíveis
+# Diagramas de exemplo
 
-Este diretório contém arquivos BPMN de exemplo que podem ser carregados no visualizador.
+Arquivos `.bpmn` usados pelo playground e pelo `@bpmn-flow/server`. O playground
+embute estes arquivos no build (`import.meta.glob`) e, quando há servidor, lista
+os que estiverem neste diretório (`GET /api/samples`).
 
-## 📁 Arquivos Disponíveis
+| Arquivo                        | Processo            | O que exercita                                                                                | Layout (DI) |
+| ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------- | ----------- |
+| `diagram.bpmn`                 | Process_1           | Menor caso possível: início → tarefa → fim.                                                   | sim         |
+| `processo-simples.bpmn`        | Processo Simples    | Gateway exclusivo com dois fins (aprovado / rejeitado).                                       | sim         |
+| `processo-compras.bpmn`        | Processo de Compras | Tarefa de usuário, service task e **dois gateways exclusivos com condições** sobre variáveis. | sim         |
+| `processo-gestao-projeto.bpmn` | Gestão de Projeto   | 13 tarefas de usuário, **gateways paralelos** (divisão e junção) e um subprocesso embutido.   | não         |
 
-### 1. `processo-simples.bpmn`
+## Executando o processo de compras
 
-- **Nome**: Processo Simples
-- **Descrição**: Um processo básico com gateway de decisão
-- **Complexidade**: Simples
-- **Elementos**: StartEvent, Task, Gateway, EndEvent
+As condições estão nos fluxos de saída dos gateways (`valor > 1000` e
+`aprovado === true`), então o caminho muda conforme as variáveis informadas:
 
-**Fluxo**:
+| Variáveis                              | Caminho                                           |
+| -------------------------------------- | ------------------------------------------------- |
+| `{ "valor": 500, "aprovado": true }`   | Pula a aprovação gerencial → Compra Realizada     |
+| `{ "valor": 2500, "aprovado": true }`  | Passa pela aprovação gerencial → Compra Realizada |
+| `{ "valor": 2500, "aprovado": false }` | Passa pela aprovação gerencial → Compra Rejeitada |
 
-1. Início → Processar Solicitação
-2. Decisão: Aprovado?
-   - ✅ Sim → Aprovar → Fim (Aprovado)
-   - ❌ Não → Rejeitar → Fim (Rejeitado)
+## Diagramas sem layout
 
-### 2. `processo-compras.bpmn`
+`processo-gestao-projeto.bpmn` não tem interchange de diagrama (DI). O viewer
+calcula o layout automaticamente (`bpmn-auto-layout`), mas o editor `bpmn-js` do
+playground exige DI e não consegue abri-lo.
 
-- **Nome**: Processo de Compras
-- **Descrição**: Fluxo completo de aprovação de compras com validação de orçamento
-- **Complexidade**: Intermediário
-- **Elementos**: StartEvent, UserTask, ServiceTask, Gateway, EndEvent
+## Adicionando um arquivo
 
-**Fluxo**:
+Basta salvar o `.bpmn` neste diretório — não há índice para atualizar. Pelo
+playground, o botão "Salvar no repositório" valida o diagrama e grava aqui
+(requer o `@bpmn-flow/server` em execução com `--samples bpmn-files`).
 
-1. Solicitação de Compra → Preencher Formulário
-2. Validar Orçamento (automático)
-3. Decisão: Valor > R$ 1000?
-   - ✅ Sim → Aprovação Gerencial
-   - ❌ Não → Pular para decisão final
-4. Decisão: Aprovado?
-   - ✅ Sim → Processar Compra → Compra Realizada
-   - ❌ Não → Compra Rejeitada
-
-## 🎨 Caminhos Predefinidos
-
-Cada arquivo tem caminhos predefinidos que podem ser destacados no visualizador:
-
-### Processo Simples
-
-- **Caminho Principal**: Aprovação (verde)
-- **Caminho Alternativo**: Rejeição (laranja)
-
-### Processo de Compras
-
-- **Caminho Principal**: Compra sem aprovação gerencial → Aprovada
-- **Caminho Alternativo**: Compra com aprovação gerencial → Rejeitada
-
-## 🔧 Como Adicionar Novos Arquivos
-
-1. Adicione seu arquivo `.bpmn` nesta pasta
-2. Atualize o arquivo `src/utils/BpmnFileManager.ts`:
-   - Adicione o nome do arquivo na lista `getAvailableFiles()`
-   - Adicione informações em `getBpmnFileInfo()`
-   - Opcionalmente, adicione caminhos em `getPredefinedPaths()`
-3. Recompile o projeto: `npx tsc`
-
-## 📝 Formato dos Arquivos
-
-Os arquivos devem estar no formato BPMN 2.0 padrão (XML) com:
-
-- Elementos `<bpmn:process>`
-- IDs únicos para cada elemento
-- Diagramas de visualização `<bpmndi:BPMNDiagram>`
-
-Exemplo de estrutura mínima:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
-  <bpmn:process id="Process_ID" isExecutable="true" name="Nome do Processo">
-    <!-- Elementos do processo aqui -->
-  </bpmn:process>
-  <!-- Diagramas de visualização aqui -->
-</bpmn:definitions>
-```
+O formato esperado é BPMN 2.0 padrão, com `<bpmn:process>` e ids únicos. O
+`<bpmndi:BPMNDiagram>` é opcional para o viewer e obrigatório para o editor.
