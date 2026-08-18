@@ -143,7 +143,7 @@ function readVariables(): Record<string, unknown> {
 
 function newEngine(mode: EngineMode, variables: Record<string, unknown>): WorkflowEngine {
   const process = currentModel?.processes[0];
-  if (!process) throw new Error('Nenhum processo executavel.');
+  if (!process) throw new Error('Nenhum processo executável.');
   const created = new WorkflowEngine(process, { mode, variables });
   unbindViewer = viewer.bindEngine(created);
   created.on('node.enter', (e) => log(`Entrou: ${label(e.nodeId)}`));
@@ -154,7 +154,7 @@ function newEngine(mode: EngineMode, variables: Record<string, unknown>): Workfl
 
 function render(snapshot: ExecutionSnapshot): void {
   viewer.applySnapshot(snapshot);
-  els.status.textContent = `Status: ${snapshot.status} - ${snapshot.tokens.length} token(s) ativos, ${snapshot.completedNodes.length} no(s) concluidos.`;
+  els.status.textContent = `Status: ${snapshot.status} - ${snapshot.tokens.length} token(s) ativos, ${snapshot.completedNodes.length} nó(s) concluídos.`;
   els.variablesView.textContent = JSON.stringify(snapshot.variables, null, 2);
   renderActions(snapshot.tokens);
 }
@@ -165,7 +165,7 @@ function renderActions(tokens: TokenSnapshot[]): void {
   if (waiting.length === 0) {
     const none = document.createElement('p');
     none.className = 'muted';
-    none.textContent = 'Nenhuma acao pendente.';
+    none.textContent = 'Nenhuma ação pendente.';
     els.actions.append(none);
     return;
   }
@@ -251,7 +251,7 @@ function renderValidation(result: ValidationResult, extra?: string): void {
   els.validation.replaceChildren();
   const header = document.createElement('p');
   header.className = result.valid ? 'valid-ok' : 'valid-err';
-  header.textContent = result.valid ? 'Diagrama valido.' : 'Diagrama invalido.';
+  header.textContent = result.valid ? 'Diagrama válido.' : 'Diagrama inválido.';
   els.validation.append(header);
   for (const issue of result.issues) {
     const item = document.createElement('p');
@@ -294,7 +294,7 @@ async function save(): Promise<void> {
     const saved = await saveSample(name, await active.getXml());
     await populateSamples();
     els.sample.value = saved.name;
-    renderValidation(result, `Salvo como ${saved.name}.bpmn no repositorio.`);
+    renderValidation(result, `Salvo como ${saved.name}.bpmn no repositório.`);
   } catch (error) {
     validationMessage(error instanceof Error ? error.message : String(error));
   }
