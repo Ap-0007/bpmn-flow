@@ -21,6 +21,23 @@ export interface MdEventDefinition {
   escalationRef?: MdRef & { name?: string; escalationCode?: string };
 }
 
+/** `bpmn:MultiInstanceLoopCharacteristics` / `bpmn:StandardLoopCharacteristics`. */
+export interface MdLoopCharacteristics {
+  $type: string;
+  isSequential?: boolean;
+  loopCardinality?: { body?: string };
+  completionCondition?: { body?: string };
+  /** Resolved data object/input holding the collection to iterate. */
+  loopDataInputRef?: MdRef & { name?: string };
+  loopDataOutputRef?: MdRef & { name?: string };
+  inputDataItem?: MdRef & { name?: string };
+  outputDataItem?: MdRef & { name?: string };
+  // standard loop
+  loopCondition?: { body?: string };
+  testBefore?: boolean;
+  loopMaximum?: number | string;
+}
+
 export interface MdElement {
   $type: string;
   id?: string;
@@ -48,6 +65,9 @@ export interface MdElement {
 
   // call activity
   calledElement?: string;
+
+  // activities: multi-instance / standard loop
+  loopCharacteristics?: MdLoopCharacteristics;
 
   // sequence flow
   sourceRef?: MdRef;

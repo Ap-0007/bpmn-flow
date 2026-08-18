@@ -9,6 +9,7 @@ export { ENGINE_STATE_VERSION } from './engine/state.js';
 export type {
   EngineState,
   EventChoiceState,
+  LoopRunState,
   InclusiveBufferState,
   ParallelBufferState,
   ScopeState,
@@ -17,7 +18,7 @@ export type {
 } from './engine/state.js';
 export { BpmnError, HandlerRegistry } from './engine/handlers.js';
 export type { HandlerContext, TaskHandler, HandlerSelector } from './engine/handlers.js';
-export { evaluateCondition } from './engine/expression.js';
+export { evaluateCondition, evaluateExpression } from './engine/expression.js';
 export { Emitter } from './engine/emitter.js';
 export type {
   EngineEvents,

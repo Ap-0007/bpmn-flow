@@ -1,10 +1,16 @@
 import { BpmnExecutionError, BpmnValidationError } from '../errors.js';
 import { ProcessGraph } from '../model/graph.js';
-import type { FlowNode, ProcessModel, SequenceFlow } from '../model/types.js';
+import { isActivityKind } from '../model/kinds.js';
+import type { FlowNode, LoopCharacteristics, ProcessModel, SequenceFlow } from '../model/types.js';
 import { Emitter } from './emitter.js';
-import { evaluateCondition } from './expression.js';
+import { evaluateCondition, evaluateExpression } from './expression.js';
 import { BpmnError, HandlerRegistry, type TaskHandler } from './handlers.js';
-import { ENGINE_STATE_VERSION, type EngineState, type TokenState } from './state.js';
+import {
+  ENGINE_STATE_VERSION,
+  type EngineState,
+  type ScopeState,
+  type TokenState,
+} from './state.js';
 import type {
   EngineEvents,
   EngineOptions,
@@ -22,7 +28,13 @@ interface Scope {
   parentToken?: RuntimeToken;
   /** Scope that hosts this one; absent on the root scope. */
   parentScopeId?: string;
+  /** Live reference to the hosting scope, used to resolve variables. */
+  parentScope?: Scope;
   hostNodeId?: string;
+  /** Data local to this scope; reads fall through to the parent chain. */
+  variables: Record<string, unknown>;
+  /** Set on scopes created for one instance of a loop/multi-instance activity. */
+  loopId?: string;
   tokens: Set<RuntimeToken>;
 }
 
@@ -32,6 +44,24 @@ interface RuntimeToken {
   scope: Scope;
   viaFlowId?: string;
   waiting?: WaitReason;
+  /** Set on the token running one instance of a loop activity. */
+  loopInstanceOf?: string;
+}
+
+/** Bookkeeping for an activity being repeated (multi-instance or loop). */
+interface LoopRun {
+  id: string;
+  nodeId: string;
+  /** Scope the repeated activity belongs to. */
+  scope: Scope;
+  /** Token suspended until every instance finishes. */
+  parentToken: RuntimeToken;
+  loop: LoopCharacteristics;
+  items?: unknown[];
+  total: number;
+  started: number;
+  completed: number;
+  instanceScopes: Set<Scope>;
 }
 
 interface EventChoice {
@@ -40,6 +70,8 @@ interface EventChoice {
 }
 
 const DEFAULT_MAX_STEPS = 100_000;
+/** Standard loops without `loopMaximum` still need a ceiling. */
+const DEFAULT_LOOP_MAXIMUM = 1_000;
 
 /**
  * Token-based BPMN execution engine.
@@ -61,14 +93,16 @@ export class WorkflowEngine {
   private readonly parallelBuffers = new Map<string, Map<string, number>>();
   private readonly inclusiveBuffers = new Map<string, RuntimeToken[]>();
   private readonly eventChoices = new Map<string, EventChoice>();
+  private readonly loops = new Map<string, LoopRun>();
   private readonly armedEvents = new Map<string, string>();
   private readonly completedNodes = new Set<string>();
   private readonly history: HistoryEntry[] = [];
 
-  private variables: Record<string, unknown>;
+  private readonly initialVariables: Record<string, unknown>;
   private status: ExecutionStatus = 'idle';
   private tokenSeq = 0;
   private scopeSeq = 0;
+  private loopSeq = 0;
   private readonly maxSteps: number;
   private readonly mode: 'automation' | 'auto';
   private steps = 0;
@@ -81,7 +115,7 @@ export class WorkflowEngine {
       throw new BpmnValidationError(`Process is not executable: ${process.id}`);
     }
     this.rootGraph = new ProcessGraph(process);
-    this.variables = { ...(options.variables ?? {}) };
+    this.initialVariables = { ...(options.variables ?? {}) };
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
     this.mode = options.mode ?? 'automation';
   }
@@ -106,6 +140,7 @@ export class WorkflowEngine {
       throw new BpmnExecutionError('Engine has already been started.');
     }
     const scope = this.createScope(this.rootGraph);
+    Object.assign(scope.variables, this.initialVariables);
     const starts = this.rootGraph.startNodes();
     if (starts.length === 0) {
       throw new BpmnValidationError('Process has no start event.');
@@ -124,7 +159,7 @@ export class WorkflowEngine {
   ): Promise<ExecutionSnapshot> {
     const token = this.waiting.get(tokenId);
     if (!token) throw new BpmnExecutionError(`No waiting task token: ${tokenId}`);
-    if (output) Object.assign(this.variables, output);
+    if (output) this.assignVariables(token.scope, output);
     this.waiting.delete(tokenId);
     token.waiting = undefined;
     this.completeNode(token);
@@ -139,7 +174,7 @@ export class WorkflowEngine {
    * event — whichever matches first — then continues execution.
    */
   async signal(nameOrId: string, output?: Record<string, unknown>): Promise<ExecutionSnapshot> {
-    if (output) Object.assign(this.variables, output);
+    if (output) this.assignVariables(this.scopes[0], output);
     if (!this.deliverSignal(nameOrId)) {
       throw new BpmnExecutionError(`No catchable event for signal: ${nameOrId}`);
     }
@@ -165,7 +200,7 @@ export class WorkflowEngine {
     }
     return {
       status: this.status,
-      variables: { ...this.variables },
+      variables: this.rootVariables(),
       tokens,
       completedNodes: [...this.completedNodes],
       history: [...this.history],
@@ -190,6 +225,7 @@ export class WorkflowEngine {
         ...(token.viaFlowId ? { viaFlowId: token.viaFlowId } : {}),
         ...(token.waiting ? { waiting: token.waiting } : {}),
         ...(placement && placement !== 'active' ? { placement } : {}),
+        ...(token.loopInstanceOf ? { loopInstanceOf: token.loopInstanceOf } : {}),
       });
     };
 
@@ -201,6 +237,8 @@ export class WorkflowEngine {
     for (const buffer of this.inclusiveBuffers.values()) {
       for (const token of buffer) record(token, 'inclusiveJoin');
     }
+    // A token repeating an activity is suspended outside every scope too.
+    for (const run of this.loops.values()) record(run.parentToken, 'suspended');
 
     return {
       version: ENGINE_STATE_VERSION,
@@ -209,14 +247,17 @@ export class WorkflowEngine {
       mode: this.mode,
       maxSteps: this.maxSteps,
       steps: this.steps,
-      variables: { ...this.variables },
+      variables: this.rootVariables(),
       tokenSeq: this.tokenSeq,
       scopeSeq: this.scopeSeq,
+      loopSeq: this.loopSeq,
       scopes: this.scopes.map((scope) => ({
         id: scope.id,
         ...(scope.parentScopeId ? { parentScopeId: scope.parentScopeId } : {}),
         ...(scope.hostNodeId ? { hostNodeId: scope.hostNodeId } : {}),
         ...(scope.parentToken ? { parentTokenId: scope.parentToken.id } : {}),
+        ...(scope.loopId ? { loopId: scope.loopId } : {}),
+        variables: { ...scope.variables },
       })),
       tokens: [...tokens.values()],
       ready: this.ready.map((token) => token.id),
@@ -235,6 +276,17 @@ export class WorkflowEngine {
         alternatives: choice.alternatives.map((alt) => ({ ...alt })),
       })),
       armedEvents: [...this.armedEvents],
+      loops: [...this.loops.values()].map((run) => ({
+        id: run.id,
+        nodeId: run.nodeId,
+        scopeId: run.scope.id,
+        parentTokenId: run.parentToken.id,
+        ...(run.items ? { items: run.items } : {}),
+        total: run.total,
+        started: run.started,
+        completed: run.completed,
+        instanceScopeIds: [...run.instanceScopes].map((scope) => scope.id),
+      })),
     };
   }
 
@@ -289,18 +341,23 @@ export class WorkflowEngine {
     this.steps = state.steps;
     this.tokenSeq = state.tokenSeq;
     this.scopeSeq = state.scopeSeq;
+    this.loopSeq = state.loopSeq;
     for (const nodeId of state.completedNodes) this.completedNodes.add(nodeId);
     this.history.push(...state.history);
 
     // Scopes come out in creation order, so a parent is always rebuilt first.
     const scopesById = new Map<string, Scope>();
     for (const stored of state.scopes) {
+      const parentScope = stored.parentScopeId ? scopesById.get(stored.parentScopeId) : undefined;
       const scope: Scope = {
         id: stored.id,
-        graph: this.graphForScope(stored.parentScopeId, stored.hostNodeId, scopesById),
+        graph: this.graphForScope(stored, scopesById),
         tokens: new Set(),
+        variables: { ...stored.variables },
         ...(stored.parentScopeId ? { parentScopeId: stored.parentScopeId } : {}),
+        ...(parentScope ? { parentScope } : {}),
         ...(stored.hostNodeId ? { hostNodeId: stored.hostNodeId } : {}),
+        ...(stored.loopId ? { loopId: stored.loopId } : {}),
       };
       scopesById.set(scope.id, scope);
       this.scopes.push(scope);
@@ -320,6 +377,7 @@ export class WorkflowEngine {
         scope,
         ...(stored.viaFlowId ? { viaFlowId: stored.viaFlowId } : {}),
         ...(stored.waiting ? { waiting: stored.waiting } : {}),
+        ...(stored.loopInstanceOf ? { loopInstanceOf: stored.loopInstanceOf } : {}),
       };
       tokensById.set(token.id, token);
       // Suspended parents and tokens buffered at a join sit outside the scope.
@@ -359,19 +417,45 @@ export class WorkflowEngine {
     for (const [eventNodeId, tokenId] of state.armedEvents) {
       this.armedEvents.set(eventNodeId, tokenId);
     }
+
+    for (const stored of state.loops) {
+      const scope = scopesById.get(stored.scopeId);
+      const parentToken = tokensById.get(stored.parentTokenId);
+      const loop = scope?.graph.node(stored.nodeId)?.loop;
+      if (!scope || !parentToken || !loop) {
+        throw new BpmnValidationError(`Cannot restore loop ${stored.id} on node ${stored.nodeId}.`);
+      }
+      this.loops.set(stored.id, {
+        id: stored.id,
+        nodeId: stored.nodeId,
+        scope,
+        parentToken,
+        loop,
+        ...(stored.items ? { items: stored.items } : {}),
+        total: stored.total,
+        started: stored.started,
+        completed: stored.completed,
+        instanceScopes: new Set(
+          stored.instanceScopeIds
+            .map((id) => scopesById.get(id))
+            .filter((s): s is Scope => s !== undefined),
+        ),
+      });
+    }
   }
 
-  /** Root scope uses the root graph; a child scope uses its host's subprocess. */
-  private graphForScope(
-    parentScopeId: string | undefined,
-    hostNodeId: string | undefined,
-    scopesById: Map<string, Scope>,
-  ): ProcessGraph {
+  /**
+   * Root scope uses the root graph, a subprocess scope its host's inner
+   * process, and a loop instance scope the same graph as the activity it
+   * repeats.
+   */
+  private graphForScope(stored: ScopeState, scopesById: Map<string, Scope>): ProcessGraph {
+    const { parentScopeId, hostNodeId, loopId } = stored;
     if (!parentScopeId) return this.rootGraph;
     const parent = scopesById.get(parentScopeId);
     if (!parent) throw new BpmnValidationError(`Unknown parent scope: ${parentScopeId}.`);
-    if (!hostNodeId)
-      throw new BpmnValidationError(`Child scope ${parentScopeId} has no host node.`);
+    if (loopId) return parent.graph;
+    if (!hostNodeId) throw new BpmnValidationError(`Child scope ${stored.id} has no host node.`);
     const host = parent.graph.requireNode(hostNodeId);
     if (!host.process) {
       throw new BpmnValidationError(`Host node ${hostNodeId} no longer defines a subprocess.`);
@@ -386,7 +470,10 @@ export class WorkflowEngine {
       id: `scope-${this.scopeSeq++}`,
       graph,
       tokens: new Set(),
-      ...(parentToken ? { parentToken, parentScopeId: parentToken.scope.id } : {}),
+      variables: {},
+      ...(parentToken
+        ? { parentToken, parentScope: parentToken.scope, parentScopeId: parentToken.scope.id }
+        : {}),
       ...(hostNodeId ? { hostNodeId } : {}),
     };
     this.scopes.push(scope);
@@ -408,6 +495,89 @@ export class WorkflowEngine {
   private discard(token: RuntimeToken): void {
     token.scope.tokens.delete(token);
     this.waiting.delete(token.id);
+  }
+
+  // --- Variables ---------------------------------------------------------
+
+  /**
+   * Reads a variable walking the scope chain outwards: the innermost scope that
+   * defines it wins, so a multi-instance item shadows a process variable.
+   */
+  private readVariable(scope: Scope | undefined, name: string): unknown {
+    for (let current = scope; current; current = current.parentScope) {
+      if (Object.hasOwn(current.variables, name)) return current.variables[name];
+    }
+    return undefined;
+  }
+
+  /**
+   * Writes to the scope that already defines the variable; otherwise to the
+   * process scope, matching the usual "process variable" expectation. Use
+   * `setLocal` in a handler to keep a value inside the current scope.
+   */
+  private writeVariable(scope: Scope | undefined, name: string, value: unknown): void {
+    for (let current = scope; current; current = current.parentScope) {
+      if (Object.hasOwn(current.variables, name)) {
+        current.variables[name] = value;
+        return;
+      }
+    }
+    const root = this.scopes[0];
+    if (root) root.variables[name] = value;
+    else this.initialVariables[name] = value;
+  }
+
+  private assignVariables(scope: Scope | undefined, values: Record<string, unknown>): void {
+    for (const [name, value] of Object.entries(values)) this.writeVariable(scope, name, value);
+  }
+
+  /** Flattened view of the scope chain, innermost value winning. */
+  private mergedVariables(scope: Scope | undefined): Record<string, unknown> {
+    const chain: Scope[] = [];
+    for (let current = scope; current; current = current.parentScope) chain.unshift(current);
+    return Object.assign({}, ...chain.map((s) => s.variables)) as Record<string, unknown>;
+  }
+
+  private rootVariables(): Record<string, unknown> {
+    return { ...(this.scopes[0]?.variables ?? this.initialVariables) };
+  }
+
+  /**
+   * Live view handed to handlers: reads resolve through the scope chain and
+   * writes go where {@link writeVariable} decides, so `ctx.variables.x = 1`
+   * keeps working as documented.
+   */
+  private variableProxy(scope: Scope): Record<string, unknown> {
+    return new Proxy(
+      {},
+      {
+        get: (_target, key) =>
+          typeof key === 'string' ? this.readVariable(scope, key) : undefined,
+        set: (_target, key, value) => {
+          if (typeof key === 'string') this.writeVariable(scope, key, value);
+          return true;
+        },
+        has: (_target, key) =>
+          typeof key === 'string' && this.readVariable(scope, key) !== undefined,
+        ownKeys: () => Object.keys(this.mergedVariables(scope)),
+        getOwnPropertyDescriptor: (_target, key) => ({
+          value: typeof key === 'string' ? this.readVariable(scope, key) : undefined,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        }),
+        deleteProperty: (_target, key) => {
+          if (typeof key !== 'string') return true;
+          for (let current: Scope | undefined = scope; current; current = current.parentScope) {
+            if (Object.hasOwn(current.variables, key)) {
+              delete current.variables[key];
+              return true;
+            }
+          }
+          return true;
+        },
+      },
+    ) as Record<string, unknown>;
   }
 
   // --- Run loop ----------------------------------------------------------
@@ -438,6 +608,12 @@ export class WorkflowEngine {
     const node = token.scope.graph.node(token.nodeId);
     if (!node) {
       this.discard(token);
+      return;
+    }
+    // A repeated activity expands into instances before anything else runs;
+    // the instance tokens themselves carry `loopInstanceOf` and fall through.
+    if (node.loop && !token.loopInstanceOf && isActivityKind(node.kind)) {
+      this.startLoop(token, node, node.loop);
       return;
     }
     this.emitter.emit('node.enter', { nodeId: node.id, nodeKind: node.kind, tokenId: token.id });
@@ -531,13 +707,14 @@ export class WorkflowEngine {
     try {
       const result = await handler({
         node,
-        variables: this.variables,
-        get: (name) => this.variables[name],
-        set: (name, value) => {
-          this.variables[name] = value;
+        variables: this.variableProxy(token.scope),
+        get: (name) => this.readVariable(token.scope, name),
+        set: (name, value) => this.writeVariable(token.scope, name, value),
+        setLocal: (name, value) => {
+          token.scope.variables[name] = value;
         },
       });
-      if (result && typeof result === 'object') Object.assign(this.variables, result);
+      if (result && typeof result === 'object') this.assignVariables(token.scope, result);
     } catch (error) {
       if (error instanceof BpmnError) {
         this.emitter.emit('activity.end', { nodeId: node.id, tokenId: token.id });
@@ -585,12 +762,183 @@ export class WorkflowEngine {
     this.leaveViaOutgoing(parent);
   }
 
+  // --- Multi-instance & loops -------------------------------------------
+
+  /** Expands an activity marked as multi-instance (or standard loop). */
+  private startLoop(token: RuntimeToken, node: FlowNode, loop: LoopCharacteristics): void {
+    const scope = token.scope;
+    const variables = this.mergedVariables(scope);
+    let items: unknown[] | undefined;
+    let total: number;
+
+    if (loop.kind === 'multiInstance') {
+      if (loop.collection) {
+        const collection = this.readVariable(scope, loop.collection);
+        if (!Array.isArray(collection)) {
+          this.fail(
+            new BpmnExecutionError(
+              `Multi-instance collection "${loop.collection}" of ${node.id} is not an array.`,
+            ),
+          );
+          return;
+        }
+        items = [...collection];
+        total = items.length;
+      } else if (loop.cardinality) {
+        const value = Number(evaluateExpression(loop.cardinality, variables));
+        if (!Number.isFinite(value) || value < 0) {
+          this.fail(
+            new BpmnExecutionError(`Multi-instance cardinality of ${node.id} is not a number.`),
+          );
+          return;
+        }
+        total = Math.floor(value);
+      } else {
+        this.fail(
+          new BpmnExecutionError(
+            `Multi-instance activity ${node.id} needs a cardinality or a collection.`,
+          ),
+        );
+        return;
+      }
+    } else {
+      total = loop.maximum ?? DEFAULT_LOOP_MAXIMUM;
+      // `testBefore` means the condition guards the very first iteration too.
+      if (
+        loop.testBefore &&
+        loop.loopCondition &&
+        !evaluateCondition(loop.loopCondition, variables)
+      )
+        total = 0;
+    }
+
+    if (total === 0) {
+      // Zero instances: the activity is simply skipped, per the specification.
+      this.completeNode(token);
+      this.leaveViaOutgoing(token);
+      return;
+    }
+
+    scope.tokens.delete(token); // suspend until every instance is done
+    const run: LoopRun = {
+      id: `loop-${this.loopSeq++}`,
+      nodeId: node.id,
+      scope,
+      parentToken: token,
+      loop,
+      ...(items ? { items } : {}),
+      total,
+      started: 0,
+      completed: 0,
+      instanceScopes: new Set(),
+    };
+    this.loops.set(run.id, run);
+    if (loop.outputCollection) this.writeVariable(scope, loop.outputCollection, []);
+    this.emitter.emit('activity.start', { nodeId: node.id, tokenId: token.id });
+
+    if (loop.sequential) {
+      this.startLoopInstance(run);
+      return;
+    }
+    for (let index = 0; index < total; index++) this.startLoopInstance(run);
+  }
+
+  /** Creates one instance scope (with its own item/counter) and its token. */
+  private startLoopInstance(run: LoopRun): void {
+    const index = run.started++;
+    const variables: Record<string, unknown> = { loopCounter: index };
+    if (run.loop.elementVariable && run.items) {
+      variables[run.loop.elementVariable] = run.items[index];
+    }
+    // Declaring the output variable locally keeps each instance's result inside
+    // its own scope, so a handler can just `set` it and the loop collects it.
+    if (run.loop.outputElement) variables[run.loop.outputElement] = undefined;
+    const scope: Scope = {
+      id: `scope-${this.scopeSeq++}`,
+      graph: run.scope.graph,
+      parentScope: run.scope,
+      parentScopeId: run.scope.id,
+      hostNodeId: run.nodeId,
+      loopId: run.id,
+      variables,
+      tokens: new Set(),
+    };
+    this.scopes.push(scope);
+    run.instanceScopes.add(scope);
+    const token = this.spawn(scope, run.nodeId);
+    token.loopInstanceOf = run.id;
+  }
+
+  /** One instance reached the end of the activity. */
+  private finishLoopInstance(token: RuntimeToken): void {
+    const run = token.loopInstanceOf ? this.loops.get(token.loopInstanceOf) : undefined;
+    const scope = token.scope;
+    this.discard(token);
+    if (!run) return;
+
+    this.collectLoopOutput(run, scope);
+    run.instanceScopes.delete(scope);
+    this.removeScope(scope);
+    run.completed++;
+
+    const variables = this.mergedVariables(run.scope);
+    if (run.loop.kind === 'multiInstance') {
+      if (
+        run.loop.completionCondition &&
+        evaluateCondition(run.loop.completionCondition, variables)
+      )
+        return this.finishLoop(run);
+      if (run.loop.sequential) {
+        if (run.started < run.total) return this.startLoopInstance(run);
+        return this.finishLoop(run);
+      }
+      if (run.completed >= run.total) this.finishLoop(run);
+      return;
+    }
+
+    const repeat =
+      run.started < run.total &&
+      (!run.loop.loopCondition || evaluateCondition(run.loop.loopCondition, variables));
+    if (repeat) this.startLoopInstance(run);
+    else this.finishLoop(run);
+  }
+
+  /** Appends the instance's output variable to the aggregated collection. */
+  private collectLoopOutput(run: LoopRun, instanceScope: Scope): void {
+    const { outputCollection, outputElement } = run.loop;
+    if (!outputCollection || !outputElement) return;
+    const collected = this.readVariable(run.scope, outputCollection);
+    if (!Array.isArray(collected)) return;
+    collected.push(this.readVariable(instanceScope, outputElement));
+  }
+
+  /** Every instance is done (or was cancelled): the activity itself completes. */
+  private finishLoop(run: LoopRun): void {
+    this.loops.delete(run.id);
+    for (const scope of [...run.instanceScopes]) {
+      for (const token of [...scope.tokens]) this.discard(token);
+      this.removeScope(scope);
+    }
+    run.instanceScopes.clear();
+
+    const parent = run.parentToken;
+    parent.scope.tokens.add(parent);
+    this.emitter.emit('activity.end', { nodeId: run.nodeId, tokenId: parent.id });
+    this.completeNode(parent);
+    this.leaveViaOutgoing(parent);
+  }
+
+  private removeScope(scope: Scope): void {
+    const index = this.scopes.indexOf(scope);
+    if (index >= 0) this.scopes.splice(index, 1);
+  }
+
   // --- Gateways ----------------------------------------------------------
 
   private handleExclusive(token: RuntimeToken, node: FlowNode): void {
     this.completeNode(token);
     const flows = token.scope.graph.outgoing(node);
-    const chosen = this.firstMatching(flows, node) ?? this.defaultFlow(flows, node);
+    const chosen = this.firstMatching(flows, node, token.scope) ?? this.defaultFlow(flows, node);
     if (!chosen) {
       this.fail(new BpmnExecutionError(`Exclusive gateway ${node.id} has no valid outgoing flow.`));
       return;
@@ -647,11 +995,16 @@ export class WorkflowEngine {
 
   // --- Flow selection ----------------------------------------------------
 
-  private firstMatching(flows: SequenceFlow[], node: FlowNode): SequenceFlow | undefined {
+  private firstMatching(
+    flows: SequenceFlow[],
+    node: FlowNode,
+    scope: Scope,
+  ): SequenceFlow | undefined {
+    const variables = this.mergedVariables(scope);
     for (const flow of flows) {
       if (flow.id === node.default) continue;
       if (!flow.conditionExpression) return flow;
-      if (evaluateCondition(flow.conditionExpression, this.variables)) return flow;
+      if (evaluateCondition(flow.conditionExpression, variables)) return flow;
     }
     return undefined;
   }
@@ -664,10 +1017,11 @@ export class WorkflowEngine {
 
   private inclusiveSplit(token: RuntimeToken, node: FlowNode): void {
     const flows = token.scope.graph.outgoing(node);
+    const variables = this.mergedVariables(token.scope);
     const taken = flows.filter(
       (f) =>
         f.id !== node.default &&
-        (!f.conditionExpression || evaluateCondition(f.conditionExpression, this.variables)),
+        (!f.conditionExpression || evaluateCondition(f.conditionExpression, variables)),
     );
     const chosen =
       taken.length > 0
@@ -695,6 +1049,12 @@ export class WorkflowEngine {
   }
 
   private leaveViaOutgoing(token: RuntimeToken): void {
+    // An instance of a repeated activity never continues on its own: it reports
+    // back to the loop, which decides whether to start another one.
+    if (token.loopInstanceOf) {
+      this.finishLoopInstance(token);
+      return;
+    }
     const node = token.scope.graph.node(token.nodeId);
     if (!node) return;
     const flows = token.scope.graph.outgoing(node);
@@ -705,8 +1065,9 @@ export class WorkflowEngine {
       return;
     }
     // Uncontrolled flow: take every unconditional/true-condition flow.
+    const variables = this.mergedVariables(token.scope);
     const taken = flows.filter(
-      (f) => !f.conditionExpression || evaluateCondition(f.conditionExpression, this.variables),
+      (f) => !f.conditionExpression || evaluateCondition(f.conditionExpression, variables),
     );
     const chosen =
       taken.length > 0

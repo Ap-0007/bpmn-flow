@@ -57,14 +57,22 @@ Decisões por construção:
 - Subprocessos: criam um escopo filho e suspendem o token pai até a conclusão;
   eventos de borda (interrompentes e não) podem desviar o fluxo.
 - Evento de fim terminate: cancela todos os tokens do escopo.
+- Multi-instância: cada instância roda num escopo próprio (com `loopCounter` e o
+  item), o token da atividade fica suspenso até todas terminarem, e a coleção de
+  saída é montada instância a instância.
 
 O modo `auto` resolve automaticamente qualquer estado de espera, útil para
 simular e animar uma execução sem handlers ou gatilhos externos.
 
+Variáveis vivem por escopo: processo, subprocesso e instância de multi-instância
+formam uma cadeia. Leitura sobe a cadeia, escrita vai para quem já define a
+variável (senão para o processo), e `ctx.setLocal()` força o escopo atual.
+
 Avaliação de condições: expressões de fluxo são parte de uma definição confiável
-e são avaliadas como JavaScript sobre as variáveis do processo. Uma expressão
-que falha é tratada como `false` (fail-closed), de modo que um guard malformado
-nunca derruba a execução.
+e são avaliadas como JavaScript sobre as variáveis visíveis no escopo. Um
+identificador desconhecido lê como `undefined` (um `Proxy` cobre o `with`), e
+uma expressão que lança é tratada como `false` (fail-closed), de modo que um
+guard malformado nunca derruba a execução.
 
 ### Viewer (`@bpmn-flow/viewer`)
 
@@ -90,8 +98,7 @@ Serve também exemplos `.bpmn` e assets estáticos com fallback de SPA.
   tarefa comum, sem instanciar o processo chamado.
 - A junção inclusiva usa alcançabilidade estrutural, adequada para modelos bem
   formados; topologias muito irregulares podem exigir revisão.
-- Uma expressão de condição que referencia uma variável inexistente resolve para
-  `false`, e não para `undefined` por identificador: o `try/catch` envolve a
-  expressão inteira.
+- Compensação, transações com rollback e call activity instanciando o processo
+  chamado continuam fora do escopo do motor.
 - O editor do playground (`bpmn-js`) exige DI no XML. Diagramas sem layout
   abrem no viewer (auto-layout), mas não no editor.

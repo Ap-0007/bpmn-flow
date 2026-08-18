@@ -48,6 +48,45 @@ Definições de evento reconhecidas pelo parser: `message`, `timer`, `error`,
   para o modelo, mas a execução trata o elemento como uma tarefa comum (ver
   divergências).
 
+## Repetição de atividades
+
+### Multi-instância
+
+`multiInstanceLoopCharacteristics` executa a atividade uma vez por instância,
+com `isSequential` decidindo entre paralelo e uma de cada vez.
+
+| Atributo              | Uso                                                                 |
+| --------------------- | ------------------------------------------------------------------- |
+| `loopCardinality`     | Expressão que devolve o número de instâncias.                       |
+| `loopDataInputRef`    | Referência ao elemento de dados cuja **variável** contém a coleção. |
+| `inputDataItem`       | Nome da variável local que recebe o item da vez.                    |
+| `loopDataOutputRef`   | Variável do processo que recebe uma entrada por instância.          |
+| `outputDataItem`      | Variável local lida ao fim de cada instância para compor a saída.   |
+| `completionCondition` | Avaliada após cada instância; verdadeira cancela as restantes.      |
+
+Cada instância roda em seu próprio escopo, com `loopCounter` (índice) e o item.
+Zero instâncias significa atividade pulada, como manda a especificação.
+
+### Loop padrão
+
+`standardLoopCharacteristics` repete a atividade enquanto `loopCondition` for
+verdadeira. `testBefore` avalia a condição antes da primeira iteração;
+`loopMaximum` limita as repetições (o padrão do motor é 1000).
+
+## Dados e escopo de variáveis
+
+O processo, cada subprocesso e cada instância de multi-instância formam uma
+cadeia de escopos. A leitura de uma variável sobe a cadeia (o escopo mais
+interno vence) e a escrita vai para o escopo que já define a variável, caindo no
+escopo do processo quando ela é nova — o comportamento que se espera de
+"variável de processo". Um handler pode escrever só no escopo atual com
+`ctx.setLocal()`.
+
+Divergência: a especificação modela dados com `ioSpecification`, `dataObject` e
+associações formais. Aqui, `loopDataInputRef` é lido como o **nome da variável**
+que contém a coleção, o que mantém os diagramas legíveis sem exigir uma
+especificação de I/O completa.
+
 ## Gateways
 
 ### Exclusivo (XOR)
@@ -87,8 +126,11 @@ Sem semântica própria: comporta-se como inclusivo (ver divergências).
 ## Fluxos de sequência
 
 Condições (`conditionExpression`) são avaliadas como JavaScript sobre as
-variáveis do processo, com suporte ao invólucro `${ ... }`. Uma expressão que
-lança ou não retorna `true` é tratada como falsa (fail-closed).
+variáveis visíveis no escopo do token, com suporte ao invólucro `${ ... }`.
+Variável inexistente lê como `undefined` em vez de lançar — `pago !== true` é
+verdadeiro antes de alguém definir `pago`, como num avaliador FEEL. Uma
+expressão que ainda assim lança, ou que não retorna `true`, é tratada como falsa
+(fail-closed).
 
 ## Divergências assumidas
 
@@ -102,10 +144,8 @@ lança ou não retorna `true` é tratada como falsa (fail-closed).
    resolve automaticamente qualquer espera e, quando um gateway não tem default
    nem condição verdadeira, toma o primeiro fluxo de saída. O modo `automation`
    (padrão) segue a especificação.
-4. **Multi-instância e loop não são lidos.** `loopCharacteristics` é ignorado
-   pelo parser, então uma atividade multi-instância executa uma única vez.
-   Compensação é reconhecida como definição de evento, mas não tem semântica de
-   execução.
+4. **Compensação** é reconhecida como definição de evento, mas não tem
+   semântica de execução.
 5. **Call activity não é instanciada.** O elemento é reconhecido e o
    `calledElement` fica no modelo, mas nenhum escopo filho é criado; embutir o
    processo chamado como subprocesso é a alternativa hoje.

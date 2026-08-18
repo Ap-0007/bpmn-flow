@@ -10,6 +10,7 @@ os que estiverem neste diretório (`GET /api/samples`).
 | `processo-simples.bpmn`        | Processo Simples    | Gateway exclusivo com dois fins (aprovado / rejeitado).                                       | sim         |
 | `processo-compras.bpmn`        | Processo de Compras | Tarefa de usuário, service task e **dois gateways exclusivos com condições** sobre variáveis. | sim         |
 | `processo-gestao-projeto.bpmn` | Gestão de Projeto   | 13 tarefas de usuário, **gateways paralelos** (divisão e junção) e um subprocesso embutido.   | não         |
+| `processo-pedido-itens.bpmn`   | Processo de Pedido  | **Multi-instância** sobre a coleção `itens`, com coleção de saída e gateway condicional.      | sim         |
 
 ## Executando o processo de compras
 
@@ -21,6 +22,16 @@ As condições estão nos fluxos de saída dos gateways (`valor > 1000` e
 | `{ "valor": 500, "aprovado": true }`   | Pula a aprovação gerencial → Compra Realizada     |
 | `{ "valor": 2500, "aprovado": true }`  | Passa pela aprovação gerencial → Compra Realizada |
 | `{ "valor": 2500, "aprovado": false }` | Passa pela aprovação gerencial → Compra Rejeitada |
+
+## Executando o processo de pedido
+
+`SepararItem` é multi-instância sobre a variável `itens`: uma instância por
+item, cada uma com `item` e `loopCounter` próprios, agregando `separados`.
+
+| Variáveis                                      | Resultado                                                  |
+| ---------------------------------------------- | ---------------------------------------------------------- |
+| `{ "itens": ["teclado", "mouse"] }`            | 2 instâncias, segue direto para a nota fiscal              |
+| `{ "itens": ["teclado", "mouse", "monitor"] }` | 3 instâncias e passa pela conferência (`itens.length > 2`) |
 
 ## Diagramas sem layout
 

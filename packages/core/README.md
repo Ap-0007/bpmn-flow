@@ -65,6 +65,22 @@ const state = engine.getState();
 const retomado = WorkflowEngine.restore(process, JSON.parse(JSON.stringify(state)));
 ```
 
+### Repetição e escopo de variáveis
+
+Uma atividade com `multiInstanceLoopCharacteristics` ou
+`standardLoopCharacteristics` é expandida em instâncias pelo motor. Cada
+instância roda num escopo próprio com `loopCounter` e o item da coleção, e a
+coleção de saída é montada a partir da variável de saída de cada instância.
+
+```ts
+engine.registerHandler('SepararItem', (ctx) => ({
+  separado: `${ctx.get('item')} separado`,
+}));
+```
+
+No `HandlerContext`, `set()` escreve onde a variável já existe (caindo no escopo
+do processo) e `setLocal()` mantém o valor apenas no escopo atual.
+
 ### Handlers
 
 ```ts

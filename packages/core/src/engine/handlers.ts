@@ -8,12 +8,23 @@ import type { FlowNode } from '../model/types.js';
 export interface HandlerContext {
   /** The activity node being executed. */
   readonly node: FlowNode;
-  /** Live process variables. Mutations are visible to the rest of the flow. */
+  /**
+   * Live view of the variables visible to this activity: the current scope
+   * chained to its parents. Mutations are visible to the rest of the flow.
+   */
   readonly variables: Record<string, unknown>;
   /** Convenience getter for a single variable. */
   get(name: string): unknown;
-  /** Convenience setter for a single variable. */
+  /**
+   * Sets a variable where it is already defined, falling back to the process
+   * scope — the usual "process variable" behaviour.
+   */
   set(name: string, value: unknown): void;
+  /**
+   * Sets a variable in the current scope only. Inside a multi-instance or loop
+   * activity that means the value dies with the instance.
+   */
+  setLocal(name: string, value: unknown): void;
 }
 
 /**

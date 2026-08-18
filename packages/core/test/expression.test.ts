@@ -11,11 +11,21 @@ describe('evaluateCondition', () => {
     expect(evaluateCondition('${status === "ok"}', { status: 'ok' })).toBe(true);
   });
 
-  it('fails closed (false) on errors instead of throwing', () => {
+  it('reads an unknown variable as undefined instead of throwing', () => {
     expect(() => evaluateCondition('missing === undefined', {})).not.toThrow();
-    expect(evaluateCondition('missing === undefined', {})).toBe(false);
-    expect(evaluateCondition('missing.deep.value', {})).toBe(false);
+    expect(evaluateCondition('missing === undefined', {})).toBe(true);
+    expect(evaluateCondition('pago !== true', {})).toBe(true);
     expect(evaluateCondition('defined === undefined', { defined: undefined })).toBe(true);
+  });
+
+  it('fails closed (false) when the expression itself throws', () => {
+    expect(evaluateCondition('missing.deep.value', {})).toBe(false);
+    expect(evaluateCondition('(() => { throw new Error("x"); })()', {})).toBe(false);
+  });
+
+  it('keeps globals reachable', () => {
+    expect(evaluateCondition('Math.max(a, b) === 5', { a: 5, b: 2 })).toBe(true);
+    expect(evaluateCondition('Array.isArray(itens)', { itens: [1] })).toBe(true);
   });
 
   it('coerces non-boolean results to false', () => {

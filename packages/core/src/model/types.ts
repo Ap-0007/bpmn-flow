@@ -35,6 +35,37 @@ export interface EventDetail {
   code?: string;
 }
 
+/**
+ * Repetition attached to an activity.
+ *
+ * `multiInstance` runs the activity once per item of a collection (or a fixed
+ * cardinality), in parallel or one at a time. `standard` is a plain loop driven
+ * by a boolean condition.
+ */
+export interface LoopCharacteristics {
+  kind: 'multiInstance' | 'standard';
+  /** Multi-instance: run instances one at a time. Standard loops always do. */
+  sequential: boolean;
+  /** Expression yielding how many instances to create. */
+  cardinality?: string;
+  /** Variable holding the input collection (`loopDataInputRef`). */
+  collection?: string;
+  /** Per-instance variable receiving the current item (`inputDataItem`). */
+  elementVariable?: string;
+  /** Variable receiving one entry per instance (`loopDataOutputRef`). */
+  outputCollection?: string;
+  /** Per-instance variable read into the output collection (`outputDataItem`). */
+  outputElement?: string;
+  /** Multi-instance: stops the remaining instances once true. */
+  completionCondition?: string;
+  /** Standard loop: repeat while true. */
+  loopCondition?: string;
+  /** Standard loop: evaluate the condition before the first iteration. */
+  testBefore?: boolean;
+  /** Standard loop: hard cap on iterations. */
+  maximum?: number;
+}
+
 /** A single node in a process graph (event, task, gateway or subprocess). */
 export interface FlowNode {
   id: string;
@@ -60,6 +91,9 @@ export interface FlowNode {
   triggeredByEvent?: boolean;
   /** Nested scope for subprocess-like nodes. */
   process?: ProcessModel;
+
+  /** Multi-instance or standard loop attached to the activity. */
+  loop?: LoopCharacteristics;
 }
 
 /** A participant (pool) in a collaboration. */

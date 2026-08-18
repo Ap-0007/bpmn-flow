@@ -133,6 +133,42 @@ tarefa): [`examples/quickstart.mjs`](examples/quickstart.mjs).
 npm run build && node examples/quickstart.mjs
 ```
 
+## Repetição: multi-instância e loop
+
+Uma atividade multi-instância roda uma vez por item de uma coleção (ou uma
+quantidade fixa), em paralelo ou uma de cada vez. Cada instância ganha o **seu
+próprio escopo de variáveis**, então `item` e `loopCounter` não vazam para o
+processo:
+
+```xml
+<bpmn:dataObject id="itens" name="itens" />
+<bpmn:dataObject id="separados" name="separados" />
+
+<bpmn:serviceTask id="SepararItem" name="Separar Item">
+  <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+    <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+    <bpmn:inputDataItem id="item" name="item" />
+    <bpmn:loopDataOutputRef>separados</bpmn:loopDataOutputRef>
+    <bpmn:outputDataItem id="separado" name="separado" />
+  </bpmn:multiInstanceLoopCharacteristics>
+</bpmn:serviceTask>
+```
+
+```ts
+engine.registerHandler('SepararItem', (ctx) => ({
+  separado: `${ctx.get('item')} separado`, // vira um item de "separados"
+}));
+
+const snapshot = await engine.start(); // uma instância por item de "itens"
+snapshot.variables.separados; // ["teclado separado", "mouse separado", ...]
+```
+
+Variáveis seguem escopo: a leitura sobe a cadeia (instância → subprocesso →
+processo) e a escrita vai para onde a variável já existe, caindo no processo
+quando ela é nova. Um handler pode forçar o escopo local com `ctx.setLocal()`.
+
+Diagrama de exemplo: [`bpmn-files/processo-pedido-itens.bpmn`](bpmn-files/processo-pedido-itens.bpmn).
+
 ## Automação com handlers
 
 Um handler executa o trabalho real por trás de uma atividade. Registre-o por id
@@ -241,6 +277,8 @@ modo que reiniciar o servidor não perde execuções em andamento.
   sendTask, receiveTask, manualTask, callActivity e subprocessos embutidos.
 - Gateways: exclusivo (com fluxo default), paralelo (junção sincronizada),
   inclusivo (junção por alcançabilidade), baseado em evento e complexo.
+- Repetição: multi-instância paralela e sequencial (por coleção ou cardinalidade,
+  com condição de conclusão e coleção de saída) e loop padrão.
 - Fluxos de sequência com condições e colaboração (pools e message flows).
 
 ## Limitações conhecidas
@@ -253,8 +291,8 @@ modo que reiniciar o servidor não perde execuções em andamento.
 - **Expressões de condição são avaliadas como JavaScript** sobre as variáveis do
   processo, assumindo que a definição do diagrama é confiável. Uma expressão que
   falha é tratada como `false` (fail-closed).
-- **Multi-instância e compensação** são reconhecidas pelo parser, mas não têm
-  semântica de execução própria; o gateway complexo se comporta como inclusivo.
+- **Compensação** é reconhecida pelo parser, mas não tem semântica de execução;
+  o gateway complexo se comporta como inclusivo.
 - **Call activity não executa o processo chamado**: `calledElement` é lido para
   o modelo, mas a atividade se comporta como uma tarefa comum (pass-through, ou
   o que um handler registrado fizer).

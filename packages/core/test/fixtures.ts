@@ -260,3 +260,84 @@ export const SUBPROCESS_WAIT = wrap(`
     <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Sub" />
     <bpmn:sequenceFlow id="f1" sourceRef="Sub" targetRef="After" />
     <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />`);
+
+export const MI_COLLECTION = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="itens" name="itens" />
+    <bpmn:dataObject id="resultados" name="resultados" />
+    <bpmn:serviceTask id="Handle" name="Handle item">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="item" name="item" />
+        <bpmn:loopDataOutputRef>resultados</bpmn:loopDataOutputRef>
+        <bpmn:outputDataItem id="resultado" name="resultado" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Handle" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Handle" targetRef="End" />`);
+
+export const MI_PARALLEL_USER_TASKS = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="aprovadores" name="aprovadores" />
+    <bpmn:userTask id="Approve" name="Approve">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>aprovadores</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="aprovador" name="aprovador" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Approve" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Approve" targetRef="End" />`);
+
+export const MI_SEQUENTIAL = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Step" name="Step">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:loopCardinality xsi:type="bpmn:tFormalExpression">3</bpmn:loopCardinality>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Step" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Step" targetRef="End" />`);
+
+export const MI_COMPLETION_CONDITION = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="Try" name="Try">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:loopCardinality xsi:type="bpmn:tFormalExpression">10</bpmn:loopCardinality>
+        <bpmn:completionCondition xsi:type="bpmn:tFormalExpression">encontrado === true</bpmn:completionCondition>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Try" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Try" targetRef="End" />`);
+
+export const MI_SUBPROCESS = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="pedidos" name="pedidos" />
+    <bpmn:subProcess id="Handle" name="Handle order">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>pedidos</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="pedido" name="pedido" />
+      </bpmn:multiInstanceLoopCharacteristics>
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:serviceTask id="Charge" />
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s1" sourceRef="SubStart" targetRef="Charge" />
+      <bpmn:sequenceFlow id="s2" sourceRef="Charge" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Handle" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Handle" targetRef="End" />`);
+
+export const STANDARD_LOOP = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="Retry" name="Retry">
+      <bpmn:standardLoopCharacteristics testBefore="true" loopMaximum="5">
+        <bpmn:loopCondition xsi:type="bpmn:tFormalExpression">pago !== true</bpmn:loopCondition>
+      </bpmn:standardLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Retry" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Retry" targetRef="End" />`);

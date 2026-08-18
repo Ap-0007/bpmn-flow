@@ -12,12 +12,13 @@ import type {
   BpmnModel,
   EventDetail,
   FlowNode,
+  LoopCharacteristics,
   MessageFlow,
   Participant,
   ProcessModel,
   SequenceFlow,
 } from '../model/types.js';
-import type { MdElement, MdEventDefinition } from './moddle-types.js';
+import type { MdElement, MdEventDefinition, MdLoopCharacteristics } from './moddle-types.js';
 
 const ELEMENT_KINDS = new Set<string>([
   ...EVENT_KINDS,
@@ -56,6 +57,46 @@ function readEventDetail(defs: MdEventDefinition[] | undefined): EventDetail | u
   return detail;
 }
 
+/**
+ * Reads multi-instance / standard loop characteristics.
+ *
+ * Collections come from `loopDataInputRef`, which the spec models as a
+ * reference to a data element: the referenced element's name (or id) is used as
+ * the process variable holding the array.
+ */
+function readLoopCharacteristics(
+  lc: MdLoopCharacteristics | undefined,
+): LoopCharacteristics | undefined {
+  if (!lc) return undefined;
+  const nameOf = (ref: { id?: string; name?: string } | undefined): string | undefined =>
+    ref ? (ref.name ?? ref.id) : undefined;
+
+  if (lc.$type.endsWith(':StandardLoopCharacteristics')) {
+    const loop: LoopCharacteristics = { kind: 'standard', sequential: true };
+    if (lc.loopCondition?.body) loop.loopCondition = lc.loopCondition.body;
+    if (lc.testBefore !== undefined) loop.testBefore = lc.testBefore;
+    const maximum = lc.loopMaximum === undefined ? undefined : Number(lc.loopMaximum);
+    if (maximum !== undefined && Number.isFinite(maximum)) loop.maximum = maximum;
+    return loop;
+  }
+
+  const loop: LoopCharacteristics = {
+    kind: 'multiInstance',
+    sequential: lc.isSequential === true,
+  };
+  if (lc.loopCardinality?.body) loop.cardinality = lc.loopCardinality.body;
+  const collection = nameOf(lc.loopDataInputRef);
+  if (collection) loop.collection = collection;
+  const elementVariable = nameOf(lc.inputDataItem);
+  if (elementVariable) loop.elementVariable = elementVariable;
+  const outputCollection = nameOf(lc.loopDataOutputRef);
+  if (outputCollection) loop.outputCollection = outputCollection;
+  const outputElement = nameOf(lc.outputDataItem);
+  if (outputElement) loop.outputElement = outputElement;
+  if (lc.completionCondition?.body) loop.completionCondition = lc.completionCondition.body;
+  return loop;
+}
+
 interface ScopeAccumulator {
   nodes: FlowNode[];
   flows: SequenceFlow[];
@@ -80,6 +121,8 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
     }
     if (el.default?.id) node.default = el.default.id;
     if (el.calledElement) node.calledElement = el.calledElement;
+    const loop = readLoopCharacteristics(el.loopCharacteristics);
+    if (loop) node.loop = loop;
     if (el.triggeredByEvent) node.triggeredByEvent = true;
     if (el.flowElements && el.flowElements.length > 0) {
       const inner = readScope(el.flowElements);
