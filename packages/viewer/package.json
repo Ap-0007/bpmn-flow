@@ -4,6 +4,30 @@
   "description": "Interactive BPMN viewer that overlays live @bpmn-flow/core execution state on a bpmn-visualization diagram.",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "bpmn",
+    "bpmn2",
+    "workflow",
+    "workflow-engine",
+    "process-automation",
+    "typescript",
+    "bpmn-visualization",
+    "diagram",
+    "browser",
+    "visualization"
+  ],
+  "homepage": "https://github.com/Bappoz/bpmn-flow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bappoz/bpmn-flow.git",
+    "directory": "packages/viewer"
+  },
+  "bugs": {
+    "url": "https://github.com/Bappoz/bpmn-flow/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

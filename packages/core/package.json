@@ -4,6 +4,30 @@
   "description": "BPMN 2.0 parser and token-based execution engine. Isomorphic (Node and browser), zero runtime UI dependencies.",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "bpmn",
+    "bpmn2",
+    "workflow",
+    "workflow-engine",
+    "process-automation",
+    "typescript",
+    "bpmn-engine",
+    "token",
+    "parser",
+    "isomorphic"
+  ],
+  "homepage": "https://github.com/Bappoz/bpmn-flow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bappoz/bpmn-flow.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/Bappoz/bpmn-flow/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

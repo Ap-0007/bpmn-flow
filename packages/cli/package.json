@@ -4,6 +4,28 @@
   "description": "Command line for BPMN Flow: validate, inspect and run BPMN 2.0 processes from the terminal.",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "bpmn",
+    "bpmn2",
+    "workflow",
+    "workflow-engine",
+    "process-automation",
+    "typescript",
+    "cli",
+    "command-line"
+  ],
+  "homepage": "https://github.com/Bappoz/bpmn-flow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bappoz/bpmn-flow.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/Bappoz/bpmn-flow/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

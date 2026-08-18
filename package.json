@@ -26,7 +26,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev": "npm run dev --workspace @bpmn-flow/playground"
+    "dev": "npm run dev --workspace @bpmn-flow/playground",
+    "release:dry": "npm publish --workspaces --dry-run --if-present"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

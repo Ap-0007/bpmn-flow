@@ -1,15 +1,9 @@
-import { defineConfig, searchForWorkspaceRoot } from 'vite';
+import { defineConfig } from 'vite';
 
+/**
+ * `BASE_PATH` lets the same build serve from the root (embedded by
+ * `@bpmn-flow/server`) or from a subpath (GitHub Pages project site).
+ */
 export default defineConfig({
-  server: {
-    port: 5173,
-    fs: {
-      // Allow importing the shared sample .bpmn files from the repo root.
-      allow: [searchForWorkspaceRoot(process.cwd())],
-    },
-  },
-  build: {
-    outDir: 'dist',
-    emptyOutDir: true,
-  },
+  base: process.env.BASE_PATH ?? '/',
 });

@@ -279,6 +279,14 @@ JSON e use `Iniciar` (pausa em cada tarefa de usuário) ou `Executar tudo`
 | `{ "valor": 2500, "aprovado": true }`  | Passa pela aprovação gerencial → **Compra Realizada** |
 | `{ "valor": 2500, "aprovado": false }` | Passa pela aprovação gerencial → **Compra Rejeitada** |
 
+### Demo pública
+
+O workflow [`Demo`](.github/workflows/pages.yml) publica o playground no GitHub
+Pages a cada push na `master` — o build é estático (os exemplos vão embutidos e
+a execução roda no navegador), só o botão "Salvar no repositório" precisa do
+servidor. Para ligar: **Settings → Pages → Source: GitHub Actions**. A partir
+daí o endereço é `https://<usuário>.github.io/<repo>/`.
+
 No modo **editar**, o diagrama é criado com `bpmn-js`, validado pelo
 `@bpmn-flow/core` e pode ser salvo no diretório de exemplos do servidor:
 
@@ -370,7 +378,19 @@ npm run format      # Prettier
 npm run dev         # sobe o playground em modo de desenvolvimento
 ```
 
-O CI roda `format:check`, `lint`, `typecheck`, `test` e `build` no Node 20 e 22.
+O CI roda `build`, `format:check`, `lint`, `typecheck` e `test` no Node 20 e 22
+(o build vem primeiro porque os pacotes se checam pelos tipos gerados).
+
+### Publicando
+
+Os quatro pacotes publicáveis já declaram `publishConfig`, `repository` e
+`files`:
+
+```bash
+npm run build
+npm run release:dry     # confere o conteúdo do tarball de cada pacote
+npm publish --workspaces --access public
+```
 
 ## Estrutura do repositório
 
