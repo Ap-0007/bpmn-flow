@@ -9,19 +9,24 @@ Monorepo npm workspaces · TypeScript (ESM) · tsup (build) · vitest · eslint 
 ## Comandos
 
 ```bash
-npm run build      # todos os pacotes (tsup)
+npm run build      # todos os pacotes (tsup) — rode ANTES do typecheck
 npm test           # vitest run (raiz)
 npm run typecheck · npm run lint · npm run format
 npm run dev        # playground
+npm run release:dry
 ```
+
+Gate: **build → format → lint → typecheck → test** (build primeiro porque os
+pacotes se checam pelos `.d.ts` uns dos outros).
 
 ## Arquitetura
 
-- `packages/core` — parser BPMN → modelo normalizado + motor de execução baseado em **tokens**.
-- `packages/server` — API (validação de diagrama, salvar em `bpmn-files/`).
-- `packages/viewer` — visualização interativa da execução no browser.
+- `packages/core` — parser BPMN → modelo normalizado + motor por **tokens**; estado serializável (`getState`/`restore`), timers (`tick`), multi-instância/loop, variáveis por escopo e `tasks()`.
+- `packages/server` — API REST, persistência de sessão (`SessionStorage`), timers periódicos e caixa de entrada (`/api/tasks`).
+- `packages/viewer` — visualização interativa da execução no browser (+ `ensureLayout`).
+- `packages/cli` — `bpmn-flow validate|inspect|run`.
 - `apps/playground` — editor/demo consumindo os pacotes.
-- `docs/ARCHITECTURE.md`, `docs/BPMN-STANDARD.md`, `docs/BPMN-ICONS-OFFICIAL.md` — decisões e aderência ao padrão; consulte antes de mudar semântica de elemento BPMN.
+- `docs/ARCHITECTURE.md`, `docs/BPMN-STANDARD.md` — decisões e aderência ao padrão; consulte antes de mudar semântica de elemento BPMN. (`docs/BPMN-ICONS-OFFICIAL.md` é resíduo do mock antigo, candidato a remoção.)
 
 ## Convenções (não-negociáveis)
 
