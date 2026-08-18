@@ -107,6 +107,25 @@ if (waiting?.waitReason === 'userTask') {
 }
 ```
 
+### Pausar e retomar
+
+A execução inteira é serializável, então um processo pode atravessar um restart,
+uma fila ou um banco de dados:
+
+```ts
+const state = engine.getState(); // JSON puro: tokens, escopos, buffers de junção
+await db.save(id, state);
+
+// Em outro processo, mais tarde:
+const retomado = WorkflowEngine.restore(process, await db.load(id));
+retomado.registerHandler('serviceTask', handler); // handlers não são serializáveis
+await retomado.completeTask(tokenId);
+```
+
+`getState()` guarda o que o `snapshot()` não guarda: contagem de chegadas em
+junção paralela, tokens em espera numa junção inclusiva, alternativas armadas de
+gateway baseado em evento e a árvore de escopos de subprocesso.
+
 Exemplo executável de ponta a ponta (handler, gateway condicional e retomada de
 tarefa): [`examples/quickstart.mjs`](examples/quickstart.mjs).
 
@@ -210,6 +229,9 @@ Endpoints principais:
 | `POST /api/sessions/:id/signal`   | Entrega um sinal/evento (`{ name }`).            |
 | `GET /api/samples`                | Lista os arquivos `.bpmn` disponíveis.           |
 
+Com `--data <dir>` cada sessão é gravada em disco e reconstruída sob demanda, de
+modo que reiniciar o servidor não perde execuções em andamento.
+
 ## Padrões BPMN suportados
 
 - Eventos: início, fim (none, terminate, error), intermediários de lançamento e
@@ -226,8 +248,8 @@ Endpoints principais:
 - **Timers não avançam sozinhos**: um evento de timer é lido do XML e o token
   fica parado até receber `signal()` (ou até rodar em modo `auto`). Não há
   agendador.
-- **Sem persistência**: as sessões do servidor vivem em memória; reiniciar o
-  processo perde as execuções em andamento.
+- **Transações não têm rollback**: `transaction` executa como subprocesso
+  comum; compensação não é executada.
 - **Expressões de condição são avaliadas como JavaScript** sobre as variáveis do
   processo, assumindo que a definição do diagrama é confiável. Uma expressão que
   falha é tratada como `false` (fail-closed).

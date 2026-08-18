@@ -3,7 +3,9 @@ import { createApp, type AppOptions } from './app.js';
 
 export { createApp, type AppOptions } from './app.js';
 export { SessionStore, SessionNotFoundError } from './sessions.js';
-export type { CreateSessionInput, Session } from './sessions.js';
+export type { CreateSessionInput, Session, SessionSummary } from './sessions.js';
+export { FileSessionStorage, InvalidSessionIdError } from './storage.js';
+export type { SessionRecord, SessionStorage } from './storage.js';
 export { SampleProvider, type SampleInfo } from './samples.js';
 
 export interface ServerOptions extends AppOptions {

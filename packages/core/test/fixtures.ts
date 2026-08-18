@@ -231,3 +231,32 @@ export const ENDLESS_LOOP = wrap(`
     <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Spin" />
     <bpmn:sequenceFlow id="f1" sourceRef="Spin" targetRef="Again" />
     <bpmn:sequenceFlow id="fBack" sourceRef="Again" targetRef="Spin" />`);
+
+export const PARALLEL_WAIT = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="TaskA" />
+    <bpmn:userTask id="TaskB" />
+    <bpmn:parallelGateway id="Join" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="TaskA" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="TaskB" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="TaskA" targetRef="Join" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="TaskB" targetRef="Join" />
+    <bpmn:sequenceFlow id="fj" sourceRef="Join" targetRef="End" />`);
+
+export const SUBPROCESS_WAIT = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Sub" name="Review">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:userTask id="Review" />
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s1" sourceRef="SubStart" targetRef="Review" />
+      <bpmn:sequenceFlow id="s2" sourceRef="Review" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:task id="After" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Sub" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />`);

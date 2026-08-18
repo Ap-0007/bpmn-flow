@@ -117,8 +117,9 @@ lança ou não retorna `true` é tratada como falsa (fail-closed).
 8. **Event subprocess (`triggeredByEvent`) é reconhecido no modelo mas não
    executa**: não há gatilho que o inicie.
 9. **Eventos de link** não são pareados: um throw de link encerra o ramo.
-10. **Sem persistência ou transações.** O estado vive em memória; `transaction`
-    se comporta como subprocesso comum, sem rollback.
+10. **Transações não têm rollback.** `transaction` se comporta como subprocesso
+    comum e a compensação não é executada. (A execução em si é serializável:
+    `getState()`/`restore()` atravessam um restart.)
 
 ## Layout e renderização
 

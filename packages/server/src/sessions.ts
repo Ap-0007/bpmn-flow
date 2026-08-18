@@ -4,7 +4,10 @@ import {
   WorkflowEngine,
   type EngineMode,
   type ExecutionSnapshot,
+  type ExecutionStatus,
+  type ProcessModel,
 } from '@bpmn-flow/core';
+import type { SessionStorage } from './storage.js';
 
 export interface CreateSessionInput {
   xml: string;
@@ -18,66 +21,136 @@ export interface Session {
   snapshot: ExecutionSnapshot;
 }
 
-interface StoredSession extends Session {
+/** Lightweight listing entry: no diagram XML, no full history. */
+export interface SessionSummary {
+  id: string;
+  status: ExecutionStatus;
+  /** Tokens currently parked on a wait state. */
+  waiting: number;
+  updatedAt?: string;
+}
+
+interface LiveSession extends Session {
   engine: WorkflowEngine;
 }
 
 /**
- * In-memory registry of running executions. Each session owns a
- * {@link WorkflowEngine} that can be resumed via HTTP (complete a user task or
- * deliver a signal) so a client can drive a process step by step.
+ * Registry of running executions. Each session owns a {@link WorkflowEngine}
+ * that can be driven over HTTP (complete a user task or deliver a signal).
+ *
+ * Engines are cached in memory. When a {@link SessionStorage} is provided,
+ * every change is written through it and a session missing from the cache is
+ * rebuilt from its stored state — so a restarted server picks executions up
+ * exactly where they stopped.
  */
 export class SessionStore {
-  private readonly sessions = new Map<string, StoredSession>();
+  private readonly cache = new Map<string, LiveSession>();
+
+  constructor(private readonly storage?: SessionStorage) {}
 
   async create(input: CreateSessionInput): Promise<Session> {
-    const model = await parseBpmn(input.xml);
-    const process = model.processes[0];
-    if (!process) throw new Error('No executable process found.');
-    const engine = new WorkflowEngine(process, {
+    const engine = new WorkflowEngine(await firstProcess(input.xml), {
       ...(input.mode ? { mode: input.mode } : {}),
       ...(input.variables ? { variables: input.variables } : {}),
     });
     const snapshot = await engine.start();
-    const session: StoredSession = { id: randomUUID(), xml: input.xml, snapshot, engine };
-    this.sessions.set(session.id, session);
-    return this.view(session);
+    const session: LiveSession = { id: randomUUID(), xml: input.xml, snapshot, engine };
+    this.cache.set(session.id, session);
+    await this.persist(session);
+    return view(session);
   }
 
-  get(id: string): Session | undefined {
-    const session = this.sessions.get(id);
-    return session ? this.view(session) : undefined;
+  async get(id: string): Promise<Session | undefined> {
+    const session = await this.load(id);
+    return session ? view(session) : undefined;
   }
 
   async complete(id: string, tokenId: string, output?: Record<string, unknown>): Promise<Session> {
-    const session = this.require(id);
+    const session = await this.require(id);
     session.snapshot = await session.engine.completeTask(tokenId, output);
-    return this.view(session);
+    await this.persist(session);
+    return view(session);
   }
 
   async signal(id: string, name: string, output?: Record<string, unknown>): Promise<Session> {
-    const session = this.require(id);
+    const session = await this.require(id);
     session.snapshot = await session.engine.signal(name, output);
-    return this.view(session);
+    await this.persist(session);
+    return view(session);
   }
 
-  delete(id: string): boolean {
-    return this.sessions.delete(id);
+  async delete(id: string): Promise<boolean> {
+    const removedFromCache = this.cache.delete(id);
+    const removedFromStorage = (await this.storage?.remove(id)) ?? false;
+    return removedFromCache || removedFromStorage;
   }
 
-  list(): Session[] {
-    return [...this.sessions.values()].map((s) => this.view(s));
+  /**
+   * Summaries of every known session, stored and in-memory. Reads the persisted
+   * state directly instead of rebuilding engines, so listing stays cheap.
+   */
+  async list(): Promise<SessionSummary[]> {
+    const summaries = new Map<string, SessionSummary>();
+    for (const record of (await this.storage?.list()) ?? []) {
+      summaries.set(record.id, {
+        id: record.id,
+        status: record.state.status,
+        waiting: record.state.tokens.filter((token) => token.waiting !== undefined).length,
+        updatedAt: record.updatedAt,
+      });
+    }
+    // The cache is authoritative: it holds the live engines.
+    for (const session of this.cache.values()) {
+      summaries.set(session.id, {
+        id: session.id,
+        status: session.snapshot.status,
+        waiting: session.snapshot.tokens.filter((token) => token.waiting).length,
+      });
+    }
+    return [...summaries.values()];
   }
 
-  private require(id: string): StoredSession {
-    const session = this.sessions.get(id);
+  private async load(id: string): Promise<LiveSession | undefined> {
+    const cached = this.cache.get(id);
+    if (cached) return cached;
+    const record = await this.storage?.read(id);
+    if (!record) return undefined;
+    const engine = WorkflowEngine.restore(await firstProcess(record.xml), record.state);
+    const session: LiveSession = {
+      id: record.id,
+      xml: record.xml,
+      snapshot: engine.snapshot(),
+      engine,
+    };
+    this.cache.set(id, session);
+    return session;
+  }
+
+  private async require(id: string): Promise<LiveSession> {
+    const session = await this.load(id);
     if (!session) throw new SessionNotFoundError(id);
     return session;
   }
 
-  private view(session: StoredSession): Session {
-    return { id: session.id, xml: session.xml, snapshot: session.snapshot };
+  private async persist(session: LiveSession): Promise<void> {
+    await this.storage?.write({
+      id: session.id,
+      xml: session.xml,
+      state: session.engine.getState(),
+      updatedAt: new Date().toISOString(),
+    });
   }
+}
+
+async function firstProcess(xml: string): Promise<ProcessModel> {
+  const model = await parseBpmn(xml);
+  const process = model.processes[0];
+  if (!process) throw new Error('No executable process found.');
+  return process;
+}
+
+function view(session: LiveSession): Session {
+  return { id: session.id, xml: session.xml, snapshot: session.snapshot };
 }
 
 export class SessionNotFoundError extends Error {

@@ -16,8 +16,10 @@ const options: ServerOptions = {
 };
 const samplesDir = process.env.SAMPLES_DIR ?? readArg('samples');
 const staticDir = process.env.STATIC_DIR ?? readArg('static');
+const dataDir = process.env.DATA_DIR ?? readArg('data');
 if (samplesDir) options.samplesDir = samplesDir;
 if (staticDir) options.staticDir = staticDir;
+if (dataDir) options.dataDir = dataDir;
 
 const server = startServer(options);
 console.log(`BPMN Flow server listening on http://localhost:${server.port}`);

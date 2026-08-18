@@ -5,6 +5,16 @@ export { parseBpmn } from './parser/parse.js';
 export { validateBpmn, validateModel } from './validate.js';
 export type { ValidationIssue, ValidationResult } from './validate.js';
 export { WorkflowEngine } from './engine/engine.js';
+export { ENGINE_STATE_VERSION } from './engine/state.js';
+export type {
+  EngineState,
+  EventChoiceState,
+  InclusiveBufferState,
+  ParallelBufferState,
+  ScopeState,
+  TokenPlacement,
+  TokenState,
+} from './engine/state.js';
 export { BpmnError, HandlerRegistry } from './engine/handlers.js';
 export type { HandlerContext, TaskHandler, HandlerSelector } from './engine/handlers.js';
 export { evaluateCondition } from './engine/expression.js';

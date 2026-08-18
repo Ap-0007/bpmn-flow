@@ -4,12 +4,18 @@ import { parseBpmn, validateBpmn } from '@bpmn-flow/core';
 import { Hono } from 'hono';
 import { SampleProvider } from './samples.js';
 import { SessionStore, type CreateSessionInput } from './sessions.js';
+import { FileSessionStorage } from './storage.js';
 
 export interface AppOptions {
   /** Directory of `.bpmn` files exposed under `/api/samples`. */
   samplesDir?: string;
   /** Directory of built static assets (the playground) served at `/`. */
   staticDir?: string;
+  /**
+   * Directory where running executions are persisted, one JSON per session.
+   * Without it sessions live in memory only and are lost on restart.
+   */
+  dataDir?: string;
 }
 
 const MIME: Record<string, string> = {
@@ -30,7 +36,9 @@ const MIME: Record<string, string> = {
  */
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
-  const sessions = new SessionStore();
+  const sessions = new SessionStore(
+    options.dataDir ? new FileSessionStorage(options.dataDir) : undefined,
+  );
   const samples = options.samplesDir ? new SampleProvider(options.samplesDir) : undefined;
 
   app.get('/api/health', (c) => c.json({ status: 'ok' }));
@@ -51,10 +59,10 @@ export function createApp(options: AppOptions = {}): Hono {
     return c.json(await sessions.create(body), 201);
   });
 
-  app.get('/api/sessions', (c) => c.json(sessions.list()));
+  app.get('/api/sessions', async (c) => c.json(await sessions.list()));
 
-  app.get('/api/sessions/:id', (c) => {
-    const session = sessions.get(c.req.param('id'));
+  app.get('/api/sessions/:id', async (c) => {
+    const session = await sessions.get(c.req.param('id'));
     return session ? c.json(session) : c.json({ error: 'Session not found' }, 404);
   });
 
@@ -74,7 +82,9 @@ export function createApp(options: AppOptions = {}): Hono {
     return c.json(await sessions.signal(c.req.param('id'), name, output));
   });
 
-  app.delete('/api/sessions/:id', (c) => c.json({ deleted: sessions.delete(c.req.param('id')) }));
+  app.delete('/api/sessions/:id', async (c) =>
+    c.json({ deleted: await sessions.delete(c.req.param('id')) }),
+  );
 
   if (samples) {
     app.get('/api/samples', async (c) => c.json(await samples.list()));

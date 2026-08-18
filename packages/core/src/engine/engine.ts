@@ -4,6 +4,7 @@ import type { FlowNode, ProcessModel, SequenceFlow } from '../model/types.js';
 import { Emitter } from './emitter.js';
 import { evaluateCondition } from './expression.js';
 import { BpmnError, HandlerRegistry, type TaskHandler } from './handlers.js';
+import { ENGINE_STATE_VERSION, type EngineState, type TokenState } from './state.js';
 import type {
   EngineEvents,
   EngineOptions,
@@ -19,6 +20,8 @@ interface Scope {
   graph: ProcessGraph;
   /** Parent activity token suspended while this (sub)scope runs. */
   parentToken?: RuntimeToken;
+  /** Scope that hosts this one; absent on the root scope. */
+  parentScopeId?: string;
   hostNodeId?: string;
   tokens: Set<RuntimeToken>;
 }
@@ -169,6 +172,213 @@ export class WorkflowEngine {
     };
   }
 
+  /**
+   * Serializes everything needed to continue this execution later: scope tree,
+   * every token (including suspended parents and tokens buffered at inclusive
+   * joins), gateway buffers, armed events and id sequences.
+   *
+   * Handlers and listeners are not serializable; register them again on the
+   * restored engine.
+   */
+  getState(): EngineState {
+    const tokens = new Map<string, TokenState>();
+    const record = (token: RuntimeToken, placement: TokenState['placement']): void => {
+      tokens.set(token.id, {
+        id: token.id,
+        nodeId: token.nodeId,
+        scopeId: token.scope.id,
+        ...(token.viaFlowId ? { viaFlowId: token.viaFlowId } : {}),
+        ...(token.waiting ? { waiting: token.waiting } : {}),
+        ...(placement && placement !== 'active' ? { placement } : {}),
+      });
+    };
+
+    for (const scope of this.scopes) {
+      for (const token of scope.tokens) record(token, 'active');
+      // Suspended parents live outside their scope's token set.
+      if (scope.parentToken) record(scope.parentToken, 'suspended');
+    }
+    for (const buffer of this.inclusiveBuffers.values()) {
+      for (const token of buffer) record(token, 'inclusiveJoin');
+    }
+
+    return {
+      version: ENGINE_STATE_VERSION,
+      processId: this.rootGraph.process.id,
+      status: this.status,
+      mode: this.mode,
+      maxSteps: this.maxSteps,
+      steps: this.steps,
+      variables: { ...this.variables },
+      tokenSeq: this.tokenSeq,
+      scopeSeq: this.scopeSeq,
+      scopes: this.scopes.map((scope) => ({
+        id: scope.id,
+        ...(scope.parentScopeId ? { parentScopeId: scope.parentScopeId } : {}),
+        ...(scope.hostNodeId ? { hostNodeId: scope.hostNodeId } : {}),
+        ...(scope.parentToken ? { parentTokenId: scope.parentToken.id } : {}),
+      })),
+      tokens: [...tokens.values()],
+      ready: this.ready.map((token) => token.id),
+      completedNodes: [...this.completedNodes],
+      history: [...this.history],
+      parallelBuffers: [...this.parallelBuffers].map(([key, counts]) => ({
+        key,
+        counts: [...counts],
+      })),
+      inclusiveBuffers: [...this.inclusiveBuffers].map(([key, buffer]) => ({
+        key,
+        tokenIds: buffer.map((token) => token.id),
+      })),
+      eventChoices: [...this.eventChoices].map(([tokenId, choice]) => ({
+        tokenId,
+        alternatives: choice.alternatives.map((alt) => ({ ...alt })),
+      })),
+      armedEvents: [...this.armedEvents],
+    };
+  }
+
+  /**
+   * Rebuilds an engine from a previously stored {@link EngineState}, so an
+   * execution can survive a restart or move between processes.
+   *
+   * The process model must be the same one the state was produced from.
+   * Re-register handlers and listeners before resuming.
+   */
+  static restore(
+    process: ProcessModel,
+    state: EngineState,
+    options: Pick<EngineOptions, 'mode' | 'maxSteps'> = {},
+  ): WorkflowEngine {
+    if (state.version !== ENGINE_STATE_VERSION) {
+      throw new BpmnValidationError(
+        `Unsupported engine state version ${state.version}; expected ${ENGINE_STATE_VERSION}.`,
+      );
+    }
+    if (state.processId !== process.id) {
+      throw new BpmnValidationError(
+        `State belongs to process "${state.processId}", not "${process.id}".`,
+      );
+    }
+    const engine = new WorkflowEngine(process, {
+      mode: options.mode ?? state.mode,
+      maxSteps: options.maxSteps ?? state.maxSteps,
+      variables: state.variables,
+    });
+    engine.hydrate(state);
+    return engine;
+  }
+
+  /**
+   * Continues a restored (or otherwise paused) execution until it completes or
+   * blocks again. Returns immediately when the process already ended.
+   */
+  async resume(): Promise<ExecutionSnapshot> {
+    if (this.status === 'idle') {
+      throw new BpmnExecutionError('Engine has not been started; call start() first.');
+    }
+    if (this.status === 'completed' || this.status === 'terminated' || this.status === 'failed') {
+      return this.snapshot();
+    }
+    await this.drain();
+    return this.snapshot();
+  }
+
+  private hydrate(state: EngineState): void {
+    this.status = state.status;
+    this.steps = state.steps;
+    this.tokenSeq = state.tokenSeq;
+    this.scopeSeq = state.scopeSeq;
+    for (const nodeId of state.completedNodes) this.completedNodes.add(nodeId);
+    this.history.push(...state.history);
+
+    // Scopes come out in creation order, so a parent is always rebuilt first.
+    const scopesById = new Map<string, Scope>();
+    for (const stored of state.scopes) {
+      const scope: Scope = {
+        id: stored.id,
+        graph: this.graphForScope(stored.parentScopeId, stored.hostNodeId, scopesById),
+        tokens: new Set(),
+        ...(stored.parentScopeId ? { parentScopeId: stored.parentScopeId } : {}),
+        ...(stored.hostNodeId ? { hostNodeId: stored.hostNodeId } : {}),
+      };
+      scopesById.set(scope.id, scope);
+      this.scopes.push(scope);
+    }
+
+    const tokensById = new Map<string, RuntimeToken>();
+    for (const stored of state.tokens) {
+      const scope = scopesById.get(stored.scopeId);
+      if (!scope) {
+        throw new BpmnValidationError(
+          `Token ${stored.id} references unknown scope ${stored.scopeId}.`,
+        );
+      }
+      const token: RuntimeToken = {
+        id: stored.id,
+        nodeId: stored.nodeId,
+        scope,
+        ...(stored.viaFlowId ? { viaFlowId: stored.viaFlowId } : {}),
+        ...(stored.waiting ? { waiting: stored.waiting } : {}),
+      };
+      tokensById.set(token.id, token);
+      // Suspended parents and tokens buffered at a join sit outside the scope.
+      if ((stored.placement ?? 'active') === 'active') scope.tokens.add(token);
+      if (token.waiting) this.waiting.set(token.id, token);
+    }
+
+    for (const stored of state.scopes) {
+      if (!stored.parentTokenId) continue;
+      const parent = tokensById.get(stored.parentTokenId);
+      const scope = scopesById.get(stored.id);
+      if (parent && scope) scope.parentToken = parent;
+    }
+
+    for (const tokenId of state.ready) {
+      const token = tokensById.get(tokenId);
+      if (token) this.ready.push(token);
+    }
+
+    for (const buffer of state.parallelBuffers) {
+      this.parallelBuffers.set(buffer.key, new Map(buffer.counts));
+    }
+    for (const buffer of state.inclusiveBuffers) {
+      const restored = buffer.tokenIds
+        .map((id) => tokensById.get(id))
+        .filter((token): token is RuntimeToken => token !== undefined);
+      this.inclusiveBuffers.set(buffer.key, restored);
+    }
+    for (const choice of state.eventChoices) {
+      const token = tokensById.get(choice.tokenId);
+      if (!token) continue;
+      this.eventChoices.set(choice.tokenId, {
+        token,
+        alternatives: choice.alternatives.map((alt) => ({ ...alt })),
+      });
+    }
+    for (const [eventNodeId, tokenId] of state.armedEvents) {
+      this.armedEvents.set(eventNodeId, tokenId);
+    }
+  }
+
+  /** Root scope uses the root graph; a child scope uses its host's subprocess. */
+  private graphForScope(
+    parentScopeId: string | undefined,
+    hostNodeId: string | undefined,
+    scopesById: Map<string, Scope>,
+  ): ProcessGraph {
+    if (!parentScopeId) return this.rootGraph;
+    const parent = scopesById.get(parentScopeId);
+    if (!parent) throw new BpmnValidationError(`Unknown parent scope: ${parentScopeId}.`);
+    if (!hostNodeId)
+      throw new BpmnValidationError(`Child scope ${parentScopeId} has no host node.`);
+    const host = parent.graph.requireNode(hostNodeId);
+    if (!host.process) {
+      throw new BpmnValidationError(`Host node ${hostNodeId} no longer defines a subprocess.`);
+    }
+    return new ProcessGraph(host.process);
+  }
+
   // --- Scope & token plumbing -------------------------------------------
 
   private createScope(graph: ProcessGraph, parentToken?: RuntimeToken, hostNodeId?: string): Scope {
@@ -176,7 +386,7 @@ export class WorkflowEngine {
       id: `scope-${this.scopeSeq++}`,
       graph,
       tokens: new Set(),
-      ...(parentToken ? { parentToken } : {}),
+      ...(parentToken ? { parentToken, parentScopeId: parentToken.scope.id } : {}),
       ...(hostNodeId ? { hostNodeId } : {}),
     };
     this.scopes.push(scope);

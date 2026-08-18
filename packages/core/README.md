@@ -49,7 +49,21 @@ Métodos:
 - `on(event, listener)`: observa `node.enter`, `node.leave`, `activity.start`,
   `activity.end`, `flow.take`, `wait`, `process.start`, `process.end`, `error`.
 - `snapshot()`: estado atual (status, variáveis, tokens, nós concluídos,
-  histórico).
+  histórico) — read model para UI.
+- `getState()`: estado completo e serializável da execução, incluindo buffers de
+  junção, escopos e eventos armados.
+- `resume()`: continua uma execução restaurada até concluir ou bloquear.
+
+### `WorkflowEngine.restore(process, state, options?)`
+
+Reconstrói um motor a partir de um `EngineState` produzido por `getState()`,
+para retomar depois de um restart. O modelo do processo precisa ser o mesmo;
+handlers e listeners não são serializados e devem ser registrados de novo.
+
+```ts
+const state = engine.getState();
+const retomado = WorkflowEngine.restore(process, JSON.parse(JSON.stringify(state)));
+```
 
 ### Handlers
 

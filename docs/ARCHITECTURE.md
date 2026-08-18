@@ -76,9 +76,11 @@ Diagramas sem interchange de diagrama (DI) são posicionados com
 
 ### Servidor (`@bpmn-flow/server`)
 
-Aplicação Hono. Mantém sessões de execução em memória, cada uma com uma
-instância do motor, permitindo dirigir um processo passo a passo por HTTP. Serve
-também exemplos `.bpmn` e assets estáticos com fallback de SPA.
+Aplicação Hono. Mantém sessões de execução em cache, cada uma com uma instância
+do motor, permitindo dirigir um processo passo a passo por HTTP. Com um
+`SessionStorage` configurado (implementação em arquivo incluída), cada mudança é
+gravada e uma sessão fora do cache é reconstruída por `WorkflowEngine.restore()`.
+Serve também exemplos `.bpmn` e assets estáticos com fallback de SPA.
 
 ## Limitações conhecidas
 
