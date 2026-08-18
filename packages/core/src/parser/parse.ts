@@ -56,7 +56,12 @@ function readEventDetail(defs: MdEventDefinition[] | undefined): EventDetail | u
   const timer = def.timeDuration?.body ?? def.timeDate?.body ?? def.timeCycle?.body;
   if (timer) detail.timer = timer;
   const reference =
-    def.messageRef?.name ?? def.signalRef?.name ?? def.errorRef?.name ?? def.escalationRef?.name;
+    def.messageRef?.name ??
+    def.signalRef?.name ??
+    def.errorRef?.name ??
+    def.escalationRef?.name ??
+    // Link events name the definition itself.
+    def.name;
   if (reference) detail.reference = reference;
   const code = def.errorRef?.errorCode ?? def.escalationRef?.escalationCode;
   if (code) detail.code = code;
@@ -159,6 +164,9 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
     const candidates = readCandidates(el.resources);
     if (candidates.length > 0) node.candidates = candidates;
     if (el.triggeredByEvent) node.triggeredByEvent = true;
+    if (kind === 'startEvent' && el.isInterrupting !== undefined) {
+      node.interrupting = el.isInterrupting;
+    }
     if (el.flowElements && el.flowElements.length > 0) {
       const inner = readScope(el.flowElements);
       node.process = {

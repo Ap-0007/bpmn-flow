@@ -309,7 +309,9 @@ modo que reiniciar o servidor não perde execuções em andamento.
 ## Padrões BPMN suportados
 
 - Eventos: início, fim (none, terminate, error), intermediários de lançamento e
-  de captura, e eventos de borda (interrompentes e não interrompentes).
+  de captura, eventos de borda (interrompentes e não interrompentes), eventos de
+  link pareados e **event subprocess** (interrompente ou não).
+- Sinais são **difundidos**: um `signal()` acorda todos os assinantes.
 - Definições de evento: message, timer, error, signal, escalation.
 - Atividades: task, userTask, serviceTask, scriptTask, businessRuleTask,
   sendTask, receiveTask, manualTask, callActivity e subprocessos embutidos.
@@ -331,6 +333,8 @@ modo que reiniciar o servidor não perde execuções em andamento.
   falha é tratada como `false` (fail-closed).
 - **Compensação** é reconhecida pelo parser, mas não tem semântica de execução;
   o gateway complexo se comporta como inclusivo.
+- **Um evento carrega uma definição só**: eventos com várias definições usam a
+  primeira.
 - **Call activity não executa o processo chamado**: `calledElement` é lido para
   o modelo, mas a atividade se comporta como uma tarefa comum (pass-through, ou
   o que um handler registrado fizer).

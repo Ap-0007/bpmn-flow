@@ -30,7 +30,23 @@ Um escopo termina quando não sobra nenhum token nele.
 
 Definições de evento reconhecidas pelo parser: `message`, `timer`, `error`,
 `signal`, `escalation`, `conditional`, `compensation`, `cancel`, `terminate` e
-`link`. As que exigem gatilho externo são resolvidas por `signal()`.
+`link`. As que exigem gatilho externo são resolvidas por `signal()`, que
+**difunde** para todos os assinantes correspondentes — eventos de captura
+parados, alternativas de gateway baseado em evento, eventos de borda e event
+subprocesses.
+
+Eventos de link são pareados dentro do escopo: um `intermediateThrowEvent` de
+link salta para o `intermediateCatchEvent` de mesmo nome, em vez de seguir pelos
+fluxos de saída.
+
+### Event subprocess
+
+Um subprocesso com `triggeredByEvent` não recebe token: ele começa quando o
+gatilho do seu evento de início chega (sinal, mensagem ou erro). Com
+`isInterrupting="true"` (padrão) o escopo que o declara tem o trabalho
+cancelado; com `false` o subprocesso roda em paralelo. Um erro sem evento de
+borda correspondente também procura um event subprocess de erro antes de falhar
+a execução.
 
 ## Atividades
 
@@ -170,17 +186,12 @@ expressão que ainda assim lança, ou que não retorna `true`, é tratada como f
 5. **Call activity não é instanciada.** O elemento é reconhecido e o
    `calledElement` fica no modelo, mas nenhum escopo filho é criado; embutir o
    processo chamado como subprocesso é a alternativa hoje.
-6. **Sinal não é difundido.** `signal(nameOrId)` resolve o primeiro alvo
-   correspondente (evento de captura, alternativa de gateway baseado em evento
-   ou evento de borda) e para por aí; a especificação difunde um sinal para
-   todos os assinantes.
-7. **Receive task só é retomada por `completeTask()`**, não por `signal()`.
-8. **Event subprocess (`triggeredByEvent`) é reconhecido no modelo mas não
-   executa**: não há gatilho que o inicie.
-9. **Eventos de link** não são pareados: um throw de link encerra o ramo.
-10. **Transações não têm rollback.** `transaction` se comporta como subprocesso
-    comum e a compensação não é executada. (A execução em si é serializável:
-    `getState()`/`restore()` atravessam um restart.)
+6. **Receive task só é retomada por `completeTask()`**, não por `signal()`.
+7. **Um evento carrega uma definição só.** Eventos com várias definições
+   (multiple / parallel multiple) usam a primeira que aparece no XML.
+8. **Transações não têm rollback.** `transaction` se comporta como subprocesso
+   comum e a compensação não é executada. (A execução em si é serializável:
+   `getState()`/`restore()` atravessam um restart.)
 
 ## Layout e renderização
 

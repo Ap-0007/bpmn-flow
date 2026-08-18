@@ -567,6 +567,29 @@ export class WorkflowEngine {
     this.clearTimersFor(token.id);
   }
 
+  /** Moves a token from a link throw event to the matching link catch event. */
+  private followLink(token: RuntimeToken, node: FlowNode): boolean {
+    const name = node.event?.reference;
+    const target = token.scope.graph
+      .allNodes()
+      .find(
+        (candidate) =>
+          candidate.kind === 'intermediateCatchEvent' &&
+          candidate.event?.kind === 'link' &&
+          candidate.event.reference === name,
+      );
+    if (!target) return false;
+
+    this.completeNode(token);
+    this.discard(token);
+    // The catch side is satisfied by the jump: continue from its outgoing flow.
+    const arrived = this.spawn(token.scope, target.id);
+    this.completeNode(arrived);
+    this.ready.splice(this.ready.indexOf(arrived), 1);
+    this.leaveViaOutgoing(arrived);
+    return true;
+  }
+
   // --- Timers ------------------------------------------------------------
 
   /**
@@ -773,6 +796,8 @@ export class WorkflowEngine {
         await this.handleEndEvent(token, node);
         return;
       case node.kind === 'intermediateThrowEvent':
+        // A link throw jumps to its matching catch instead of flowing on.
+        if (node.event?.kind === 'link' && this.followLink(token, node)) return;
         this.completeNode(token);
         this.leaveViaOutgoing(token);
         return;
@@ -819,6 +844,7 @@ export class WorkflowEngine {
       this.discard(token);
       const code = node.event?.code ?? node.event?.reference;
       if (this.raiseErrorOnHost(token.scope, code)) return;
+      if (this.raiseErrorOnEventSubProcess(code)) return;
       this.checkScopeCompletion(token.scope);
       return;
     }
@@ -860,6 +886,8 @@ export class WorkflowEngine {
         this.emitter.emit('activity.end', { nodeId: node.id, tokenId: token.id });
         this.discard(token);
         if (this.raiseErrorOnActivity(token.scope, node.id, error.code)) return;
+        // No boundary event: an error event subprocess is the next chance.
+        if (this.raiseErrorOnEventSubProcess(error.code)) return;
         this.fail(error);
         return;
       }
@@ -1245,34 +1273,92 @@ export class WorkflowEngine {
     this.emitter.emit('wait', { nodeId: token.nodeId, tokenId: token.id, reason });
   }
 
+  /**
+   * Delivers a trigger to **every** subscriber that matches, as the
+   * specification requires of a signal: parked catch events, armed
+   * event-based gateway alternatives, boundary events and event subprocesses.
+   */
   private deliverSignal(nameOrId: string): boolean {
-    // 1. A parked catch event (match by node id or event reference).
-    for (const token of this.waiting.values()) {
-      if (token.waiting !== 'catchEvent') continue;
+    let delivered = false;
+
+    // 1. Parked catch events (match by node id or event reference).
+    const parked = [...this.waiting.values()].filter((token) => {
+      if (token.waiting !== 'catchEvent') return false;
       const node = token.scope.graph.node(token.nodeId);
-      if (!node) continue;
-      if (node.id === nameOrId || node.event?.reference === nameOrId) {
-        this.waiting.delete(token.id);
-        token.waiting = undefined;
-        this.completeNode(token);
-        this.leaveViaOutgoing(token);
-        return true;
-      }
+      return node ? matchesTrigger(node, nameOrId) : false;
+    });
+    for (const token of parked) {
+      this.waiting.delete(token.id);
+      token.waiting = undefined;
+      this.completeNode(token);
+      this.leaveViaOutgoing(token);
+      delivered = true;
     }
-    // 2. An event-based gateway alternative.
-    for (const [eventNodeId, gatewayTokenId] of this.armedEvents) {
+
+    // 2. Event-based gateway alternatives.
+    for (const [eventNodeId, gatewayTokenId] of [...this.armedEvents]) {
       const choice = this.eventChoices.get(gatewayTokenId);
       if (!choice) continue;
-      const scope = choice.token.scope;
-      const eventNode = scope.graph.node(eventNodeId);
-      if (!eventNode) continue;
-      if (eventNode.id === nameOrId || eventNode.event?.reference === nameOrId) {
-        this.resolveEventChoice(choice, eventNodeId);
-        return true;
+      const eventNode = choice.token.scope.graph.node(eventNodeId);
+      if (!eventNode || !matchesTrigger(eventNode, nameOrId)) continue;
+      this.resolveEventChoice(choice, eventNodeId);
+      delivered = true;
+    }
+
+    // 3. Boundary events on active/waiting/suspended activities.
+    if (this.fireBoundaryBySignal(nameOrId)) delivered = true;
+
+    // 4. Event subprocesses listening for this trigger.
+    if (this.startEventSubProcesses((start) => matchesTrigger(start, nameOrId))) delivered = true;
+
+    return delivered;
+  }
+
+  /**
+   * Starts every event subprocess whose start event matches. An interrupting
+   * one cancels the work of the scope that declares it; a non-interrupting one
+   * runs alongside it.
+   */
+  private startEventSubProcesses(matches: (start: FlowNode) => boolean): boolean {
+    let started = false;
+    for (const scope of [...this.scopes]) {
+      // Loop instance scopes share their parent's graph: only look once.
+      if (scope.loopId) continue;
+      for (const node of scope.graph.allNodes()) {
+        if (!node.triggeredByEvent || !node.process) continue;
+        // An event subprocess already running is not started again.
+        const running = this.scopes.some(
+          (s) => s.hostNodeId === node.id && s.parentScopeId === scope.id,
+        );
+        if (running) continue;
+        const graph = new ProcessGraph(node.process);
+        const start = graph
+          .allNodes()
+          .find((candidate) => candidate.kind === 'startEvent' && matches(candidate));
+        if (!start) continue;
+        this.launchEventSubProcess(scope, node, graph, start);
+        started = true;
       }
     }
-    // 3. A boundary event on an active/waiting/suspended activity.
-    return this.fireBoundaryBySignal(nameOrId);
+    return started;
+  }
+
+  private launchEventSubProcess(
+    host: Scope,
+    node: FlowNode,
+    graph: ProcessGraph,
+    start: FlowNode,
+  ): void {
+    if (start.interrupting !== false) {
+      // Interrupting: the enclosing scope stops doing whatever it was doing.
+      for (const token of [...host.tokens]) this.discard(token);
+    }
+    const child = this.createScope(graph, undefined, node.id);
+    child.parentScope = host;
+    child.parentScopeId = host.id;
+    this.emitter.emit('activity.start', { nodeId: node.id, tokenId: '-' });
+    const token = this.spawn(child, start.id);
+    this.completeNode(token);
   }
 
   private resolveEventChoice(choice: EventChoice, eventNodeId: string): void {
@@ -1299,6 +1385,14 @@ export class WorkflowEngine {
       }
     }
     return false;
+  }
+
+  /** True when an event subprocess with a matching error start event ran. */
+  private raiseErrorOnEventSubProcess(code?: string): boolean {
+    return this.startEventSubProcesses(
+      (start) =>
+        start.event?.kind === 'error' && (!code || !start.event.code || start.event.code === code),
+    );
   }
 
   private raiseErrorOnActivity(scope: Scope, activityId: string, code?: string): boolean {
@@ -1438,6 +1532,12 @@ export class WorkflowEngine {
     if (this.hasPendingFor(scope)) return;
     if (scope.parentToken) {
       this.finishSubProcess(scope);
+      return;
+    }
+    // Event subprocess scopes have no parent token: they just go away.
+    if (scope.hostNodeId) {
+      this.emitter.emit('activity.end', { nodeId: scope.hostNodeId, tokenId: '-' });
+      this.removeScope(scope);
     }
   }
 
@@ -1498,6 +1598,11 @@ function matchesFilter(task: PendingTask, filter: TaskFilter): boolean {
     return false;
   }
   return true;
+}
+
+/** A trigger matches a node by its id or by the referenced event name. */
+function matchesTrigger(node: FlowNode, nameOrId: string): boolean {
+  return node.id === nameOrId || node.event?.reference === nameOrId;
 }
 
 /** Timers are unique per (token, timer node) pair. */

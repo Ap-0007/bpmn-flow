@@ -12,6 +12,8 @@ export interface MdRef {
 
 export interface MdEventDefinition {
   $type: string;
+  /** Link events carry the name on the definition itself. */
+  name?: string;
   timeDuration?: { body?: string };
   timeDate?: { body?: string };
   timeCycle?: { body?: string };
@@ -75,6 +77,8 @@ export interface MdElement {
   eventDefinitions?: MdEventDefinition[];
   attachedToRef?: MdRef;
   cancelActivity?: boolean;
+  /** Start event of an event subprocess: does it cancel the enclosing scope? */
+  isInterrupting?: boolean;
 
   // gateways / activities
   default?: MdRef;

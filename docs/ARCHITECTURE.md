@@ -57,6 +57,9 @@ Decisões por construção:
 - Subprocessos: criam um escopo filho e suspendem o token pai até a conclusão;
   eventos de borda (interrompentes e não) podem desviar o fluxo.
 - Evento de fim terminate: cancela todos os tokens do escopo.
+- Event subprocess: sem token de entrada — o gatilho cria um escopo filho e, se
+  o evento de início for interrompente, cancela o trabalho do escopo que o
+  declara.
 - Multi-instância: cada instância roda num escopo próprio (com `loopCounter` e o
   item), o token da atividade fica suspenso até todas terminarem, e a coleção de
   saída é montada instância a instância.

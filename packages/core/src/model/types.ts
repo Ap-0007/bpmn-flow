@@ -89,6 +89,12 @@ export interface FlowNode {
   calledElement?: string;
   /** Event sub-processes are triggered by their start event, not by a token. */
   triggeredByEvent?: boolean;
+  /**
+   * Start event of an event subprocess: `false` for a non-interrupting one,
+   * which runs alongside the enclosing scope instead of cancelling it.
+   * Defaults to interrupting, as the specification does.
+   */
+  interrupting?: boolean;
   /** Nested scope for subprocess-like nodes. */
   process?: ProcessModel;
 
