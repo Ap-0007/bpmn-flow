@@ -233,8 +233,11 @@ Endpoints principais:
   falha é tratada como `false` (fail-closed).
 - **Multi-instância e compensação** são reconhecidas pelo parser, mas não têm
   semântica de execução própria; o gateway complexo se comporta como inclusivo.
-- **Call activity** só executa quando o processo referenciado está no mesmo
-  modelo; caso contrário é um pass-through.
+- **Call activity não executa o processo chamado**: `calledElement` é lido para
+  o modelo, mas a atividade se comporta como uma tarefa comum (pass-through, ou
+  o que um handler registrado fizer).
+- **Sinal não é broadcast**: `signal()` entrega ao primeiro evento de captura
+  correspondente, enquanto a especificação difunde para todos.
 
 ## Desenvolvimento
 

@@ -44,8 +44,9 @@ Definições de evento reconhecidas pelo parser: `message`, `timer`, `error`,
   sem correspondência, a execução falha.
 - `subProcess`, `transaction` e `adHocSubProcess` criam um escopo filho e
   suspendem o token pai até a conclusão do escopo.
-- `callActivity` executa o processo referenciado quando ele está no mesmo
-  modelo; caso contrário é pass-through (ver divergências).
+- `callActivity` **não instancia o processo chamado**: `calledElement` é lido
+  para o modelo, mas a execução trata o elemento como uma tarefa comum (ver
+  divergências).
 
 ## Gateways
 
@@ -101,12 +102,23 @@ lança ou não retorna `true` é tratada como falsa (fail-closed).
    resolve automaticamente qualquer espera e, quando um gateway não tem default
    nem condição verdadeira, toma o primeiro fluxo de saída. O modo `automation`
    (padrão) segue a especificação.
-4. **Multi-instância e compensação** são reconhecidas no modelo, mas não têm
-   semântica de execução própria.
-5. **Call activity sem processo no modelo** é pass-through em vez de erro, para
-   permitir executar diagramas parcialmente definidos.
-6. **Sem persistência ou transações.** O estado vive em memória; `transaction`
-   se comporta como subprocesso comum, sem rollback.
+4. **Multi-instância e loop não são lidos.** `loopCharacteristics` é ignorado
+   pelo parser, então uma atividade multi-instância executa uma única vez.
+   Compensação é reconhecida como definição de evento, mas não tem semântica de
+   execução.
+5. **Call activity não é instanciada.** O elemento é reconhecido e o
+   `calledElement` fica no modelo, mas nenhum escopo filho é criado; embutir o
+   processo chamado como subprocesso é a alternativa hoje.
+6. **Sinal não é difundido.** `signal(nameOrId)` resolve o primeiro alvo
+   correspondente (evento de captura, alternativa de gateway baseado em evento
+   ou evento de borda) e para por aí; a especificação difunde um sinal para
+   todos os assinantes.
+7. **Receive task só é retomada por `completeTask()`**, não por `signal()`.
+8. **Event subprocess (`triggeredByEvent`) é reconhecido no modelo mas não
+   executa**: não há gatilho que o inicie.
+9. **Eventos de link** não são pareados: um throw de link encerra o ramo.
+10. **Sem persistência ou transações.** O estado vive em memória; `transaction`
+    se comporta como subprocesso comum, sem rollback.
 
 ## Layout e renderização
 

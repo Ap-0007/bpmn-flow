@@ -84,8 +84,8 @@ também exemplos `.bpmn` e assets estáticos com fallback de SPA.
 
 - Timers não avançam sozinhos no modo automation; são disparados via `signal`
   (ou resolvidos no modo auto). Não há agendador.
-- Call activities só executam quando o processo referenciado está disponível no
-  próprio modelo; caso contrário, comportam-se como pass-through.
+- Call activity não resolve `calledElement`: a atividade é tratada como uma
+  tarefa comum, sem instanciar o processo chamado.
 - A junção inclusiva usa alcançabilidade estrutural, adequada para modelos bem
   formados; topologias muito irregulares podem exigir revisão.
 - Uma expressão de condição que referencia uma variável inexistente resolve para
