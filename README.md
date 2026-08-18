@@ -42,6 +42,7 @@ O repositório é um monorepo (npm workspaces) com quatro módulos:
 | `@bpmn-flow/core`       | Parser BPMN 2.0, modelo normalizado e motor de execução por tokens.          | Node e browser |
 | `@bpmn-flow/viewer`     | Renderização interativa sobre `bpmn-visualization` com overlays de execução. | Browser        |
 | `@bpmn-flow/server`     | API REST sobre o `core` e host estático para servir uma UI numa porta.       | Node           |
+| `@bpmn-flow/cli`        | `bpmn-flow validate/inspect/run` para usar o motor no terminal.              | Node           |
 | `@bpmn-flow/playground` | Aplicação Vite para carregar, visualizar e executar processos no navegador.  | Browser        |
 
 Fluxo de dados: `XML BPMN -> parseBpmn -> ProcessModel -> WorkflowEngine ->
@@ -278,6 +279,18 @@ No modo **editar**, o diagrama é criado com `bpmn-js`, validado pelo
 
 ![Editor com o resultado da validação estrutural](docs/media/editor-validacao.png)
 
+## Linha de comando
+
+```bash
+bpmn-flow validate processo.bpmn   # sai 1 se o diagrama for inválido
+bpmn-flow inspect  processo.bpmn   # nós por tipo, raias, multi-instância, timers
+bpmn-flow run      processo.bpmn --vars '{"valor":2500}'
+```
+
+`run` aceita `--mode auto`, `--save estado.json` e `--state estado.json`, então
+dá para pausar uma execução e retomá-la depois. Detalhes em
+[`packages/cli`](packages/cli/README.md).
+
 ## Servidor HTTP e API REST
 
 O `@bpmn-flow/server` expõe a execução por HTTP e pode servir a interface numa
@@ -361,6 +374,7 @@ packages/
   core/        modelo, parser e motor de execução
   viewer/      renderização interativa com overlays
   server/      API REST e host estático
+  cli/         linha de comando
 apps/
   playground/  aplicação interativa (Vite)
 examples/      scripts executáveis de uso da biblioteca

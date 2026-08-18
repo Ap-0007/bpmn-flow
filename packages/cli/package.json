@@ -1,0 +1,30 @@
+{
+  "name": "@bpmn-flow/cli",
+  "version": "0.1.0",
+  "description": "Command line for BPMN Flow: validate, inspect and run BPMN 2.0 processes from the terminal.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "bpmn-flow": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bpmn-flow/core": "^0.1.0"
+  }
+}
