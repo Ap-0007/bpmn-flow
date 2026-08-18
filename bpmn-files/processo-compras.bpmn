@@ -3,6 +3,7 @@
                    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
                    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
                    xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    id="Definitions_Compras"
                    targetNamespace="http://bpmn.io/schema/bpmn">
   
@@ -21,7 +22,7 @@
       <bpmn:outgoing>SequenceFlow_3</bpmn:outgoing>
     </bpmn:serviceTask>
     
-    <bpmn:exclusiveGateway id="Gateway_1" name="Valor > R$ 1000?">
+    <bpmn:exclusiveGateway id="Gateway_1" name="Valor > R$ 1000?" default="SequenceFlow_5">
       <bpmn:incoming>SequenceFlow_3</bpmn:incoming>
       <bpmn:outgoing>SequenceFlow_4</bpmn:outgoing>
       <bpmn:outgoing>SequenceFlow_5</bpmn:outgoing>
@@ -32,7 +33,7 @@
       <bpmn:outgoing>SequenceFlow_6</bpmn:outgoing>
     </bpmn:userTask>
     
-    <bpmn:exclusiveGateway id="Gateway_2" name="Aprovado?">
+    <bpmn:exclusiveGateway id="Gateway_2" name="Aprovado?" default="SequenceFlow_8">
       <bpmn:incoming>SequenceFlow_6</bpmn:incoming>
       <bpmn:incoming>SequenceFlow_5</bpmn:incoming>
       <bpmn:outgoing>SequenceFlow_7</bpmn:outgoing>
@@ -55,10 +56,14 @@
     <bpmn:sequenceFlow id="SequenceFlow_1" sourceRef="StartEvent_1" targetRef="UserTask_1" />
     <bpmn:sequenceFlow id="SequenceFlow_2" sourceRef="UserTask_1" targetRef="ServiceTask_1" />
     <bpmn:sequenceFlow id="SequenceFlow_3" sourceRef="ServiceTask_1" targetRef="Gateway_1" />
-    <bpmn:sequenceFlow id="SequenceFlow_4" name="Sim" sourceRef="Gateway_1" targetRef="UserTask_2" />
+    <bpmn:sequenceFlow id="SequenceFlow_4" name="Sim" sourceRef="Gateway_1" targetRef="UserTask_2">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">valor &gt; 1000</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="SequenceFlow_5" name="Não" sourceRef="Gateway_1" targetRef="Gateway_2" />
     <bpmn:sequenceFlow id="SequenceFlow_6" sourceRef="UserTask_2" targetRef="Gateway_2" />
-    <bpmn:sequenceFlow id="SequenceFlow_7" name="Sim" sourceRef="Gateway_2" targetRef="ServiceTask_2" />
+    <bpmn:sequenceFlow id="SequenceFlow_7" name="Sim" sourceRef="Gateway_2" targetRef="ServiceTask_2">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">aprovado === true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="SequenceFlow_8" name="Não" sourceRef="Gateway_2" targetRef="EndEvent_2" />
     <bpmn:sequenceFlow id="SequenceFlow_9" sourceRef="ServiceTask_2" targetRef="EndEvent_1" />
   </bpmn:process>
