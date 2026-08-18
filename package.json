@@ -8,7 +8,7 @@
   "author": "Bappoz",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Bappoz/bpmn-visualization.git"
+    "url": "git+https://github.com/Bappoz/bpmn-flow.git"
   },
   "engines": {
     "node": ">=20"
