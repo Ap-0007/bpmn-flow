@@ -34,6 +34,11 @@ Há dois modos, alternados pelos botões "Executar" e "Editar".
 - Informe variáveis em JSON para influenciar os gateways condicionais. No
   `processo-compras`, `{ "valor": 2500, "aprovado": false }` leva à rejeição e
   `{ "valor": 500, "aprovado": true }` pula a aprovação gerencial.
+- O painel de **ações pendentes** mostra um cartão por tarefa, com a raia, os
+  papéis (`potentialOwner`) e — numa atividade multi-instância — o item daquela
+  instância.
+- O painel de **timers** lista os prazos pendentes; "Adiantar relógio" força o
+  vencimento do próximo, útil para demonstrar um SLA sem esperar.
 - O painel mostra status, variáveis e o histórico da execução; o diagrama
   destaca nós concluídos, tokens ativos, atividades em espera e fluxos
   percorridos.

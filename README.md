@@ -149,7 +149,10 @@ engine.tasks({ role: 'gerentes' }); // só o que esse papel pode executar
 ```
 
 O filtro casa tanto com a raia quanto com os papéis declarados. Numa atividade
-multi-instância, cada instância aparece como uma tarefa própria, com o seu item.
+multi-instância, cada instância aparece como uma tarefa própria, com o seu item:
+
+![Três tarefas de aprovação, uma por aprovador](docs/media/multi-instancia-tarefas.png)
+
 No servidor, `GET /api/tasks?role=gerentes` faz o mesmo atravessando todas as
 sessões.
 
@@ -169,8 +172,10 @@ await engine.tick(); // dispara o que venceu e continua a execução
 
 Funciona com duração (`PT5M`), data absoluta (`2026-08-20T10:00:00Z`) e ciclo
 (`R3/PT10M`, disparando uma vez), tanto em evento de captura quanto em evento de
-borda — um prazo de aprovação que escala sozinho, por exemplo. O
+borda — um prazo de atendimento que escala sozinho, por exemplo. O
 `@bpmn-flow/server` já faz esse `tick` periodicamente.
+
+![Tarefa com raia e papel, e o timer do SLA correndo](docs/media/timer-e-atribuicao.png)
 
 ## Repetição: multi-instância e loop
 

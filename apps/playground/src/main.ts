@@ -5,6 +5,7 @@ import {
   type EngineMode,
   type ExecutionSnapshot,
   type FlowNode,
+  type PendingTask,
   type TokenSnapshot,
   type ValidationResult,
 } from '@bpmn-flow/core';
@@ -51,6 +52,7 @@ const els = {
   validation: $<HTMLDivElement>('validation'),
   status: $<HTMLParagraphElement>('status'),
   actions: $<HTMLDivElement>('actions'),
+  timers: $<HTMLDivElement>('timers'),
   variables: $<HTMLTextAreaElement>('variables'),
   variablesView: $<HTMLPreElement>('variables-view'),
   log: $<HTMLOListElement>('log'),
@@ -128,6 +130,7 @@ async function loadDiagram(xml: string): Promise<void> {
   els.log.replaceChildren();
   els.actions.replaceChildren();
   els.variablesView.textContent = '';
+  els.timers.replaceChildren();
   els.status.textContent = `Diagrama carregado: ${currentModel.processes[0]?.name ?? currentModel.processes[0]?.id ?? 'processo'}.`;
 }
 
@@ -158,35 +161,81 @@ function render(snapshot: ExecutionSnapshot): void {
   els.status.textContent = `Status: ${snapshot.status} - ${snapshot.tokens.length} token(s) ativos, ${snapshot.completedNodes.length} nó(s) concluídos.`;
   els.variablesView.textContent = JSON.stringify(snapshot.variables, null, 2);
   renderActions(snapshot.tokens);
+  renderTimers();
 }
 
 function renderActions(tokens: TokenSnapshot[]): void {
   els.actions.replaceChildren();
-  const waiting = tokens.filter((t) => t.waiting);
-  if (waiting.length === 0) {
+  const tasks = engine?.tasks() ?? [];
+  if (tasks.length === 0) {
     const none = document.createElement('p');
     none.className = 'muted';
     none.textContent = 'Nenhuma ação pendente.';
     els.actions.append(none);
     return;
   }
-  for (const token of waiting) addActionButtons(token);
+  for (const task of tasks) addTaskCard(task);
+  // Gateways baseados em evento pedem um gatilho por alternativa.
+  for (const token of tokens) {
+    if (token.waitReason === 'eventBasedGateway') addEventGatewayButtons(token);
+  }
 }
 
-function addActionButtons(token: TokenSnapshot): void {
-  if (token.waitReason === 'eventBasedGateway') {
-    const node = nodesById.get(token.nodeId);
-    for (const flowId of node?.outgoing ?? []) {
-      const flow = currentModel?.processes[0]?.sequenceFlows.find((f) => f.id === flowId);
-      if (flow) actionButton(`Sinalizar ${label(flow.targetRef)}`, () => signal(flow.targetRef));
-    }
-    return;
+/** Cartão de tarefa: quem executa, por que parou e o que a instância enxerga. */
+function addTaskCard(task: PendingTask): void {
+  const card = document.createElement('div');
+  card.className = 'task';
+
+  const title = document.createElement('p');
+  title.className = 'task-title';
+  title.textContent = task.name ?? task.nodeId;
+  card.append(title);
+
+  const badges = document.createElement('p');
+  badges.className = 'task-badges';
+  for (const text of [task.lane, ...task.candidates].filter(Boolean)) {
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = text as string;
+    badges.append(badge);
   }
-  if (token.waitReason === 'catchEvent') {
-    actionButton(`Sinalizar ${label(token.nodeId)}`, () => signal(token.nodeId));
-    return;
+  const reason = document.createElement('span');
+  reason.className = 'badge badge-muted';
+  reason.textContent = task.reason;
+  badges.append(reason);
+  card.append(badges);
+
+  // Numa atividade multi-instância, mostra o que é próprio desta instância.
+  const loop = nodesById.get(task.nodeId)?.loop;
+  if (loop) {
+    const names = [loop.elementVariable, 'loopCounter'].filter(
+      (name): name is string => typeof name === 'string',
+    );
+    const detail = document.createElement('p');
+    detail.className = 'task-vars';
+    detail.textContent = names
+      .map((name) => `${name}=${JSON.stringify(task.variables[name])}`)
+      .join(' · ');
+    card.append(detail);
   }
-  actionButton(`Concluir ${label(token.nodeId)}`, () => complete(token.id));
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = task.reason === 'catchEvent' ? 'Sinalizar' : 'Concluir';
+  button.addEventListener('click', () => {
+    if (task.reason === 'catchEvent') void signal(task.nodeId);
+    else void complete(task.tokenId);
+  });
+  card.append(button);
+  els.actions.append(card);
+}
+
+function addEventGatewayButtons(token: TokenSnapshot): void {
+  const node = nodesById.get(token.nodeId);
+  for (const flowId of node?.outgoing ?? []) {
+    const flow = currentModel?.processes[0]?.sequenceFlows.find((f) => f.id === flowId);
+    if (flow) actionButton(`Sinalizar ${label(flow.targetRef)}`, () => signal(flow.targetRef));
+  }
 }
 
 function actionButton(text: string, onClick: () => void): void {
@@ -195,6 +244,42 @@ function actionButton(text: string, onClick: () => void): void {
   button.textContent = text;
   button.addEventListener('click', onClick);
   els.actions.append(button);
+}
+
+/** Timers pendentes, com atalho para adiantar o relógio na demonstração. */
+function renderTimers(): void {
+  els.timers.replaceChildren();
+  const timers = engine?.dueTimers() ?? [];
+  if (timers.length === 0) {
+    const none = document.createElement('p');
+    none.className = 'muted';
+    none.textContent = 'Nenhum timer pendente.';
+    els.timers.append(none);
+    return;
+  }
+  for (const timer of timers) {
+    const line = document.createElement('p');
+    line.className = 'timer';
+    const remaining = Math.max(0, Math.round((timer.dueAt - Date.now()) / 1000));
+    line.textContent = `${label(timer.nodeId)} · ${timer.definition} · faltam ${remaining}s`;
+    els.timers.append(line);
+  }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'Adiantar relógio';
+  button.addEventListener('click', () => void fastForward());
+  els.timers.append(button);
+}
+
+async function fastForward(): Promise<void> {
+  if (!engine) return;
+  const next = engine.nextTimerAt();
+  if (next === undefined) return;
+  try {
+    render(await engine.tick(next));
+  } catch (error) {
+    fail(error);
+  }
 }
 
 async function start(): Promise<void> {

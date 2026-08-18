@@ -4,13 +4,15 @@ Arquivos `.bpmn` usados pelo playground e pelo `@bpmn-flow/server`. O playground
 embute estes arquivos no build (`import.meta.glob`) e, quando há servidor, lista
 os que estiverem neste diretório (`GET /api/samples`).
 
-| Arquivo                        | Processo            | O que exercita                                                                                | Layout (DI) |
-| ------------------------------ | ------------------- | --------------------------------------------------------------------------------------------- | ----------- |
-| `diagram.bpmn`                 | Process_1           | Menor caso possível: início → tarefa → fim.                                                   | sim         |
-| `processo-simples.bpmn`        | Processo Simples    | Gateway exclusivo com dois fins (aprovado / rejeitado).                                       | sim         |
-| `processo-compras.bpmn`        | Processo de Compras | Tarefa de usuário, service task e **dois gateways exclusivos com condições** sobre variáveis. | sim         |
-| `processo-gestao-projeto.bpmn` | Gestão de Projeto   | 13 tarefas de usuário, **gateways paralelos** (divisão e junção) e um subprocesso embutido.   | não         |
-| `processo-pedido-itens.bpmn`   | Processo de Pedido  | **Multi-instância** sobre a coleção `itens`, com coleção de saída e gateway condicional.      | sim         |
+| Arquivo                            | Processo            | O que exercita                                                                                | Layout (DI) |
+| ---------------------------------- | ------------------- | --------------------------------------------------------------------------------------------- | ----------- |
+| `diagram.bpmn`                     | Process_1           | Menor caso possível: início → tarefa → fim.                                                   | sim         |
+| `processo-simples.bpmn`            | Processo Simples    | Gateway exclusivo com dois fins (aprovado / rejeitado).                                       | sim         |
+| `processo-compras.bpmn`            | Processo de Compras | Tarefa de usuário, service task e **dois gateways exclusivos com condições** sobre variáveis. | sim         |
+| `processo-gestao-projeto.bpmn`     | Gestão de Projeto   | 13 tarefas de usuário, **gateways paralelos** (divisão e junção) e um subprocesso embutido.   | não         |
+| `processo-pedido-itens.bpmn`       | Processo de Pedido  | **Multi-instância** sobre a coleção `itens`, com coleção de saída e gateway condicional.      | sim         |
+| `processo-aprovacao-coletiva.bpmn` | Aprovação Coletiva  | Multi-instância de **tarefa de usuário**: uma aprovação por pessoa de `aprovadores`.          | sim         |
+| `processo-suporte-sla.bpmn`        | Atendimento com SLA | **Timer de borda** (`PT2H`), raias e papéis (`potentialOwner`).                               | sim         |
 
 ## Executando o processo de compras
 
@@ -32,6 +34,16 @@ item, cada uma com `item` e `loopCounter` próprios, agregando `separados`.
 | ---------------------------------------------- | ---------------------------------------------------------- |
 | `{ "itens": ["teclado", "mouse"] }`            | 2 instâncias, segue direto para a nota fiscal              |
 | `{ "itens": ["teclado", "mouse", "monitor"] }` | 3 instâncias e passa pela conferência (`itens.length > 2`) |
+
+## Executando os processos novos
+
+| Diagrama                           | Variáveis                                  | O que acontece                                              |
+| ---------------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
+| `processo-aprovacao-coletiva.bpmn` | `{ "aprovadores": ["ana", "bob", "cid"] }` | 3 tarefas simultâneas, uma por aprovador                    |
+| `processo-suporte-sla.bpmn`        | `{}`                                       | Para em "Atender Chamado"; o timer de 2h escala se estourar |
+
+No playground, o botão **Adiantar relógio** no painel de timers força o
+vencimento sem esperar as duas horas.
 
 ## Diagramas sem layout
 
