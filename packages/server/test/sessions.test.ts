@@ -76,3 +76,45 @@ describe('SessionStore with file storage', () => {
     expect(await new SessionStore().get(created.id)).toBeUndefined();
   });
 });
+
+const TIMER_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  targetNamespace="http://bpmn-flow.test" id="Defs">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:intermediateCatchEvent id="Wait">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT1H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Wait" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Wait" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+describe('timers over sessions', () => {
+  it('advances only the sessions whose timer is due', async () => {
+    const store = new SessionStore(new FileSessionStorage(dir));
+    const created = await store.create({ xml: TIMER_XML });
+    expect(created.snapshot.status).toBe('waiting');
+
+    expect(await store.tickAll(Date.now())).toEqual([]);
+
+    const advanced = await store.tickAll(Date.now() + 2 * 3_600_000);
+    expect(advanced).toEqual([created.id]);
+    expect((await store.get(created.id))?.snapshot.status).toBe('completed');
+  });
+
+  it('fires a timer of a session restored from disk', async () => {
+    const created = await new SessionStore(new FileSessionStorage(dir)).create({ xml: TIMER_XML });
+
+    // Fresh store, as after a restart: the due timer is found in the files.
+    const restarted = new SessionStore(new FileSessionStorage(dir));
+    const advanced = await restarted.tickAll(Date.now() + 2 * 3_600_000);
+
+    expect(advanced).toEqual([created.id]);
+    expect((await restarted.get(created.id))?.snapshot.status).toBe('completed');
+  });
+});

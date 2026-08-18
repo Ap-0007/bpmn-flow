@@ -61,6 +61,11 @@ Decisões por construção:
   item), o token da atividade fica suspenso até todas terminarem, e a coleção de
   saída é montada instância a instância.
 
+Timers viram data de vencimento (`resolveTimerDueAt`) quando o token para no
+evento — ou quando a atividade com evento de borda começa a esperar. O motor não
+tem relógio: `tick(now?)` dispara o que venceu, e `now` é injetável, o que deixa
+o teste de timer determinístico e sem `sleep`.
+
 O modo `auto` resolve automaticamente qualquer estado de espera, útil para
 simular e animar uma execução sem handlers ou gatilhos externos.
 

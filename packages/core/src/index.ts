@@ -6,6 +6,7 @@ export { validateBpmn, validateModel } from './validate.js';
 export type { ValidationIssue, ValidationResult } from './validate.js';
 export { WorkflowEngine } from './engine/engine.js';
 export { ENGINE_STATE_VERSION } from './engine/state.js';
+export { parseIsoDuration, resolveTimerDueAt } from './engine/timers.js';
 export type {
   EngineState,
   EventChoiceState,
@@ -13,6 +14,7 @@ export type {
   InclusiveBufferState,
   ParallelBufferState,
   ScopeState,
+  TimerState,
   TokenPlacement,
   TokenState,
 } from './engine/state.js';

@@ -24,7 +24,7 @@ Um escopo termina quando não sobra nenhum token nele.
 | `endEvent` (terminate)            | Cancela **todos** os tokens do escopo imediatamente.                                                |
 | `endEvent` (error)                | Consome o token e levanta o erro no escopo pai, procurando um evento de borda correspondente.       |
 | `intermediateThrowEvent`          | Pass-through: conclui e segue adiante.                                                              |
-| `intermediateCatchEvent`          | Estaciona o token (`waitReason: "catchEvent"`) até `signal()`.                                      |
+| `intermediateCatchEvent`          | Estaciona o token (`waitReason: "catchEvent"`) até `signal()` ou até o timer vencer.                |
 | `boundaryEvent` interrompente     | Descarta o token da atividade hospedeira (ou o escopo do subprocesso) e segue pelo fluxo do evento. |
 | `boundaryEvent` não interrompente | Mantém a atividade em execução e cria um token adicional no fluxo do evento.                        |
 
@@ -72,6 +72,16 @@ Zero instâncias significa atividade pulada, como manda a especificação.
 `standardLoopCharacteristics` repete a atividade enquanto `loopCondition` for
 verdadeira. `testBefore` avalia a condição antes da primeira iteração;
 `loopMaximum` limita as repetições (o padrão do motor é 1000).
+
+## Timers
+
+`timeDuration` (ISO-8601), `timeDate` (data absoluta) e `timeCycle` (só o
+intervalo) são resolvidos para uma data de vencimento no momento em que o token
+para no evento — ou em que a atividade com evento de borda começa a esperar.
+`tick(now?)` dispara o que venceu; anos e meses de duração usam 365 e 30 dias.
+
+Um timer de borda é desarmado quando a atividade termina antes do prazo, e o
+vencimento faz parte do estado serializado, então sobrevive a um restart.
 
 ## Dados e escopo de variáveis
 
@@ -134,9 +144,10 @@ expressão que ainda assim lança, ou que não retorna `true`, é tratada como f
 
 ## Divergências assumidas
 
-1. **Timers não são agendados.** `timeDuration`, `timeDate` e `timeCycle` são
-   lidos para o modelo, mas o motor não tem relógio: o token fica em espera até
-   `signal()`. Agendamento é responsabilidade de quem embute a biblioteca.
+1. **Ciclos de timer disparam uma vez.** `timeCycle` (`R3/PT10M`) é lido como o
+   intervalo, sem repetir. O motor também não tem relógio próprio: calcula o
+   vencimento e o host chama `tick()` — o `@bpmn-flow/server` faz isso em
+   intervalo configurável.
 2. **Gateway complexo tratado como inclusivo.** A especificação delega o
    comportamento a uma expressão de ativação; a aproximação evita travar
    diagramas que usam o símbolo sem definir a expressão.

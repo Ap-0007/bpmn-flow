@@ -1,5 +1,7 @@
 import { serve } from '@hono/node-server';
 import { createApp, type AppOptions } from './app.js';
+import { SessionStore } from './sessions.js';
+import { FileSessionStorage } from './storage.js';
 
 export { createApp, type AppOptions } from './app.js';
 export { SessionStore, SessionNotFoundError } from './sessions.js';
@@ -11,6 +13,11 @@ export { SampleProvider, type SampleInfo } from './samples.js';
 export interface ServerOptions extends AppOptions {
   port?: number;
   hostname?: string;
+  /**
+   * How often to fire due BPMN timers, in milliseconds. Defaults to 1000; set
+   * to 0 to disable and drive timers yourself via `POST /api/sessions/:id/tick`.
+   */
+  timerIntervalMs?: number;
 }
 
 export interface RunningServer {
@@ -24,14 +31,32 @@ export interface RunningServer {
  */
 export function startServer(options: ServerOptions = {}): RunningServer {
   const port = options.port ?? 3000;
-  const app = createApp(options);
+  const sessions =
+    options.sessions ??
+    new SessionStore(options.dataDir ? new FileSessionStorage(options.dataDir) : undefined);
+  const app = createApp({ ...options, sessions });
   const server = serve({
     fetch: app.fetch,
     port,
     ...(options.hostname ? { hostname: options.hostname } : {}),
   });
+
+  // Timers are the one thing a process cannot do for itself: something has to
+  // notice the due date passed.
+  const interval = options.timerIntervalMs ?? 1000;
+  const timer =
+    interval > 0
+      ? setInterval(() => {
+          void sessions.tickAll().catch(() => undefined);
+        }, interval)
+      : undefined;
+  timer?.unref?.();
+
   return {
     port,
-    close: () => server.close(),
+    close: () => {
+      if (timer) clearInterval(timer);
+      server.close();
+    },
   };
 }

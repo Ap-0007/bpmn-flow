@@ -133,6 +133,25 @@ tarefa): [`examples/quickstart.mjs`](examples/quickstart.mjs).
 npm run build && node examples/quickstart.mjs
 ```
 
+## Timers
+
+Eventos de timer viram data de vencimento. O motor não tem relógio próprio: ele
+calcula o vencimento e alguém decide quando conferir — o que mantém o `core`
+testável e determinístico.
+
+```ts
+const engine = new WorkflowEngine(process); // `now` injetável para testes
+await engine.start();
+
+engine.nextTimerAt(); // epoch ms do próximo vencimento
+await engine.tick(); // dispara o que venceu e continua a execução
+```
+
+Funciona com duração (`PT5M`), data absoluta (`2026-08-20T10:00:00Z`) e ciclo
+(`R3/PT10M`, disparando uma vez), tanto em evento de captura quanto em evento de
+borda — um prazo de aprovação que escala sozinho, por exemplo. O
+`@bpmn-flow/server` já faz esse `tick` periodicamente.
+
 ## Repetição: multi-instância e loop
 
 Uma atividade multi-instância roda uma vez por item de uma coleção (ou uma
@@ -283,9 +302,8 @@ modo que reiniciar o servidor não perde execuções em andamento.
 
 ## Limitações conhecidas
 
-- **Timers não avançam sozinhos**: um evento de timer é lido do XML e o token
-  fica parado até receber `signal()` (ou até rodar em modo `auto`). Não há
-  agendador.
+- **Ciclos de timer disparam uma vez**: `R3/PT10M` é lido como um intervalo de
+  10 minutos, sem repetição.
 - **Transações não têm rollback**: `transaction` executa como subprocesso
   comum; compensação não é executada.
 - **Expressões de condição são avaliadas como JavaScript** sobre as variáveis do

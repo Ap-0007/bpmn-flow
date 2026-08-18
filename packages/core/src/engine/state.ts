@@ -14,7 +14,7 @@ import type { EngineMode, ExecutionStatus, HistoryEntry, WaitReason } from './ty
  *
  * Bump {@link ENGINE_STATE_VERSION} whenever the shape changes.
  */
-export const ENGINE_STATE_VERSION = 2;
+export const ENGINE_STATE_VERSION = 3;
 
 /** Where a token currently sits, since not every token lives in a scope. */
 export type TokenPlacement =
@@ -63,6 +63,20 @@ export interface LoopRunState {
   instanceScopeIds: string[];
 }
 
+/** A timer waiting to fire. */
+export interface TimerState {
+  /** Token parked on the catch event, or hosting the boundary event. */
+  tokenId: string;
+  /** The timer event node. */
+  nodeId: string;
+  scopeId: string;
+  kind: 'catch' | 'boundary';
+  /** Epoch milliseconds when the timer becomes due. */
+  dueAt: number;
+  /** The original definition (`PT5M`, a date, or a cycle). */
+  definition: string;
+}
+
 /** Arrival counts per incoming flow of a parallel join. */
 export interface ParallelBufferState {
   key: string;
@@ -100,6 +114,7 @@ export interface EngineState {
   inclusiveBuffers: InclusiveBufferState[];
   eventChoices: EventChoiceState[];
   loops: LoopRunState[];
+  timers: TimerState[];
   /** `eventNodeId -> tokenId` of the gateway waiting on that event. */
   armedEvents: [string, string][];
 }

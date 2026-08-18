@@ -42,6 +42,11 @@ export type EngineMode = 'automation' | 'auto';
 
 export interface EngineOptions {
   mode?: EngineMode;
+  /**
+   * Clock used to schedule timer events. Defaults to `Date.now`; inject a fake
+   * one to test timers without waiting.
+   */
+  now?: () => number;
   /** Guards against infinite loops; caps node transitions per drain. */
   maxSteps?: number;
   /** Initial process variables. */

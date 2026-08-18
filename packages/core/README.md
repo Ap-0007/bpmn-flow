@@ -35,6 +35,8 @@ Opções:
 
 - `mode`: `"automation"` (padrão) pausa em tarefas de usuário/captura;
   `"auto"` resolve todas as esperas para simular uma execução completa.
+- `now`: relógio usado para agendar timers (padrão `Date.now`); injete um falso
+  para testar sem esperar.
 - `variables`: variáveis iniciais do processo.
 - `maxSteps`: limite de transições (proteção contra loops infinitos).
 
@@ -53,6 +55,8 @@ Métodos:
 - `getState()`: estado completo e serializável da execução, incluindo buffers de
   junção, escopos e eventos armados.
 - `resume()`: continua uma execução restaurada até concluir ou bloquear.
+- `tick(now?)`: dispara os timers vencidos e continua a execução.
+- `dueTimers()` / `nextTimerAt()`: timers pendentes e o próximo vencimento.
 
 ### `WorkflowEngine.restore(process, state, options?)`
 

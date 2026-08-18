@@ -16,6 +16,8 @@ export interface AppOptions {
    * Without it sessions live in memory only and are lost on restart.
    */
   dataDir?: string;
+  /** Session registry to use. Built from `dataDir` when omitted. */
+  sessions?: SessionStore;
 }
 
 const MIME: Record<string, string> = {
@@ -36,9 +38,9 @@ const MIME: Record<string, string> = {
  */
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
-  const sessions = new SessionStore(
-    options.dataDir ? new FileSessionStorage(options.dataDir) : undefined,
-  );
+  const sessions =
+    options.sessions ??
+    new SessionStore(options.dataDir ? new FileSessionStorage(options.dataDir) : undefined);
   const samples = options.samplesDir ? new SampleProvider(options.samplesDir) : undefined;
 
   app.get('/api/health', (c) => c.json({ status: 'ok' }));
@@ -72,6 +74,11 @@ export function createApp(options: AppOptions = {}): Hono {
       output?: Record<string, unknown>;
     }>();
     return c.json(await sessions.complete(c.req.param('id'), tokenId, output));
+  });
+
+  app.post('/api/sessions/:id/tick', async (c) => {
+    const body = await c.req.json<{ now?: number }>().catch(() => ({}) as { now?: number });
+    return c.json(await sessions.tick(c.req.param('id'), body.now));
   });
 
   app.post('/api/sessions/:id/signal', async (c) => {

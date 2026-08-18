@@ -72,6 +72,35 @@ export class SessionStore {
     return view(session);
   }
 
+  /** Fires the timers of one session that are due at `now`. */
+  async tick(id: string, now?: number): Promise<Session> {
+    const session = await this.require(id);
+    session.snapshot = await session.engine.tick(now);
+    await this.persist(session);
+    return view(session);
+  }
+
+  /**
+   * Fires due timers across every known session and returns the ids that were
+   * advanced. Stored sessions are inspected by their state — only the ones with
+   * a timer actually due are rebuilt.
+   */
+  async tickAll(now: number = Date.now()): Promise<string[]> {
+    const candidates = new Set<string>();
+    for (const record of (await this.storage?.list()) ?? []) {
+      if (record.state.timers.some((timer) => timer.dueAt <= now)) candidates.add(record.id);
+    }
+    for (const [id, session] of this.cache) {
+      if (session.engine.dueTimers().some((timer) => timer.dueAt <= now)) candidates.add(id);
+    }
+    const advanced: string[] = [];
+    for (const id of candidates) {
+      await this.tick(id, now);
+      advanced.push(id);
+    }
+    return advanced;
+  }
+
   async signal(id: string, name: string, output?: Record<string, unknown>): Promise<Session> {
     const session = await this.require(id);
     session.snapshot = await session.engine.signal(name, output);

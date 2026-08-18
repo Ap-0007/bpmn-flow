@@ -341,3 +341,32 @@ export const STANDARD_LOOP = wrap(`
     <bpmn:endEvent id="End" />
     <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Retry" />
     <bpmn:sequenceFlow id="f1" sourceRef="Retry" targetRef="End" />`);
+
+export const TIMER_CATCH = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:intermediateCatchEvent id="Wait5m" name="Aguardar 5 min">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT5M</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="After" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Wait5m" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Wait5m" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />`);
+
+export const TIMER_BOUNDARY = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Approve" name="Aprovar" />
+    <bpmn:boundaryEvent id="Deadline" attachedToRef="Approve">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT2H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Escalate" name="Escalar" />
+    <bpmn:endEvent id="EndEscalated" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Approve" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Approve" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Deadline" targetRef="Escalate" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Escalate" targetRef="EndEscalated" />`);

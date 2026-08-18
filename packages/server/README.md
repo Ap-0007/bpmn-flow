@@ -48,10 +48,21 @@ Variáveis de ambiente equivalentes: `PORT`, `STATIC_DIR`, `SAMPLES_DIR`,
 | `GET /api/sessions/:id`           | -                            | Snapshot atual da sessão.         |
 | `POST /api/sessions/:id/complete` | `{ tokenId, output? }`       | Conclui uma tarefa de usuário.    |
 | `POST /api/sessions/:id/signal`   | `{ name, output? }`          | Entrega um sinal/evento.          |
+| `POST /api/sessions/:id/tick`     | `{ now? }`                   | Dispara os timers vencidos.       |
 | `DELETE /api/sessions/:id`        | -                            | Remove a sessão.                  |
 | `GET /api/samples`                | -                            | Lista os `.bpmn` do diretório.    |
 | `GET /api/samples/:name`          | -                            | Retorna o XML de um exemplo.      |
 | `POST /api/samples`               | `{ name, xml }`              | Valida e salva um `.bpmn` no dir. |
+
+## Timers
+
+O servidor confere os timers vencidos de todas as sessões a cada
+`timerIntervalMs` (padrão 1000 ms; `0` desliga). Sessões só existentes em disco
+são reconstruídas apenas quando têm um timer realmente vencido.
+
+```ts
+startServer({ port: 3000, dataDir: './data', timerIntervalMs: 5000 });
+```
 
 ## Persistência
 

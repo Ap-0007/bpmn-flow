@@ -23,6 +23,10 @@ jobs:
 
       - run: npm ci
 
+      # Packages typecheck against each other's built types, so build first.
+      - name: Build
+        run: npm run build
+
       - name: Format
         run: npm run format:check
 
@@ -34,6 +38,3 @@ jobs:
 
       - name: Test
         run: npm test
-
-      - name: Build
-        run: npm run build

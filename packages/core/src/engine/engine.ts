@@ -10,7 +10,9 @@ import {
   type EngineState,
   type ScopeState,
   type TokenState,
+  type TimerState,
 } from './state.js';
+import { resolveTimerDueAt } from './timers.js';
 import type {
   EngineEvents,
   EngineOptions,
@@ -94,6 +96,8 @@ export class WorkflowEngine {
   private readonly inclusiveBuffers = new Map<string, RuntimeToken[]>();
   private readonly eventChoices = new Map<string, EventChoice>();
   private readonly loops = new Map<string, LoopRun>();
+  /** Pending timers keyed by `tokenId:nodeId`. */
+  private readonly timers = new Map<string, TimerState>();
   private readonly armedEvents = new Map<string, string>();
   private readonly completedNodes = new Set<string>();
   private readonly history: HistoryEntry[] = [];
@@ -103,6 +107,7 @@ export class WorkflowEngine {
   private tokenSeq = 0;
   private scopeSeq = 0;
   private loopSeq = 0;
+  private readonly now: () => number;
   private readonly maxSteps: number;
   private readonly mode: 'automation' | 'auto';
   private steps = 0;
@@ -118,6 +123,7 @@ export class WorkflowEngine {
     this.initialVariables = { ...(options.variables ?? {}) };
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
     this.mode = options.mode ?? 'automation';
+    this.now = options.now ?? (() => Date.now());
   }
 
   // --- Public API --------------------------------------------------------
@@ -179,6 +185,34 @@ export class WorkflowEngine {
       throw new BpmnExecutionError(`No catchable event for signal: ${nameOrId}`);
     }
     await this.drain();
+    return this.snapshot();
+  }
+
+  /**
+   * Timers waiting to fire, earliest first. A host can use the first due date
+   * to decide when to call {@link tick} again.
+   */
+  dueTimers(): TimerState[] {
+    return [...this.timers.values()].sort((a, b) => a.dueAt - b.dueAt);
+  }
+
+  /** Epoch milliseconds of the next timer, or `undefined` when there is none. */
+  nextTimerAt(): number | undefined {
+    return this.dueTimers()[0]?.dueAt;
+  }
+
+  /**
+   * Fires every timer due at `now` (defaults to the engine clock) and continues
+   * the execution. Nothing due means nothing changes.
+   */
+  async tick(now: number = this.now()): Promise<ExecutionSnapshot> {
+    let fired = false;
+    for (const entry of this.dueTimers()) {
+      if (entry.dueAt > now) break;
+      if (!this.timers.has(timerKey(entry.tokenId, entry.nodeId))) continue;
+      if (this.fireTimer(entry)) fired = true;
+    }
+    if (fired) await this.drain();
     return this.snapshot();
   }
 
@@ -276,6 +310,7 @@ export class WorkflowEngine {
         alternatives: choice.alternatives.map((alt) => ({ ...alt })),
       })),
       armedEvents: [...this.armedEvents],
+      timers: [...this.timers.values()].map((timer) => ({ ...timer })),
       loops: [...this.loops.values()].map((run) => ({
         id: run.id,
         nodeId: run.nodeId,
@@ -418,6 +453,10 @@ export class WorkflowEngine {
       this.armedEvents.set(eventNodeId, tokenId);
     }
 
+    for (const timer of state.timers) {
+      this.timers.set(timerKey(timer.tokenId, timer.nodeId), { ...timer });
+    }
+
     for (const stored of state.loops) {
       const scope = scopesById.get(stored.scopeId);
       const parentToken = tokensById.get(stored.parentTokenId);
@@ -495,6 +534,77 @@ export class WorkflowEngine {
   private discard(token: RuntimeToken): void {
     token.scope.tokens.delete(token);
     this.waiting.delete(token.id);
+    this.clearTimersFor(token.id);
+  }
+
+  // --- Timers ------------------------------------------------------------
+
+  /**
+   * Arms the timers a parked token is subject to: the timer catch event it sits
+   * on, plus any timer boundary event attached to the activity.
+   */
+  private armTimers(token: RuntimeToken): void {
+    const node = token.scope.graph.node(token.nodeId);
+    if (!node) return;
+    if (node.event?.kind === 'timer' && node.kind !== 'boundaryEvent') {
+      this.armTimer(token, node, 'catch', node.event.timer);
+    }
+    this.armBoundaryTimers(token);
+  }
+
+  /** Arms timer boundary events attached to the activity the token sits on. */
+  private armBoundaryTimers(token: RuntimeToken): void {
+    for (const boundary of token.scope.graph.boundaryEvents(token.nodeId)) {
+      if (boundary.event?.kind !== 'timer') continue;
+      this.armTimer(token, boundary, 'boundary', boundary.event.timer);
+    }
+  }
+
+  private armTimer(
+    token: RuntimeToken,
+    node: FlowNode,
+    kind: TimerState['kind'],
+    definition: string | undefined,
+  ): void {
+    // Without a definition there is nothing to schedule: the event still works
+    // through an explicit signal.
+    if (!definition) return;
+    const dueAt = resolveTimerDueAt(definition, this.now());
+    if (dueAt === undefined) return;
+    this.timers.set(timerKey(token.id, node.id), {
+      tokenId: token.id,
+      nodeId: node.id,
+      scopeId: token.scope.id,
+      kind,
+      dueAt,
+      definition,
+    });
+  }
+
+  private clearTimersFor(tokenId: string): void {
+    for (const [key, entry] of this.timers) {
+      if (entry.tokenId === tokenId) this.timers.delete(key);
+    }
+  }
+
+  /** Resolves one due timer. Returns true when the execution moved. */
+  private fireTimer(entry: TimerState): boolean {
+    this.timers.delete(timerKey(entry.tokenId, entry.nodeId));
+
+    if (entry.kind === 'boundary') {
+      const scope = this.scopes.find((s) => s.id === entry.scopeId);
+      const boundary = scope?.graph.node(entry.nodeId);
+      if (!scope || !boundary) return false;
+      return this.fireBoundary(scope, boundary);
+    }
+
+    const token = this.waiting.get(entry.tokenId);
+    if (!token || token.waiting !== 'catchEvent' || token.nodeId !== entry.nodeId) return false;
+    this.waiting.delete(token.id);
+    token.waiting = undefined;
+    this.completeNode(token);
+    this.leaveViaOutgoing(token);
+    return true;
   }
 
   // --- Variables ---------------------------------------------------------
@@ -740,6 +850,7 @@ export class WorkflowEngine {
     }
     this.emitter.emit('activity.start', { nodeId: node.id, tokenId: token.id });
     token.scope.tokens.delete(token); // suspend parent while child runs
+    this.armBoundaryTimers(token);
     const childGraph = new ProcessGraph(node.process);
     const child = this.createScope(childGraph, token, node.id);
     const starts = childGraph.startNodes().filter((s) => !s.event || s.event.kind === 'none');
@@ -820,6 +931,7 @@ export class WorkflowEngine {
     }
 
     scope.tokens.delete(token); // suspend until every instance is done
+    this.armBoundaryTimers(token);
     const run: LoopRun = {
       id: `loop-${this.loopSeq++}`,
       nodeId: node.id,
@@ -1099,6 +1211,7 @@ export class WorkflowEngine {
   private park(token: RuntimeToken, reason: WaitReason): void {
     token.waiting = reason;
     this.waiting.set(token.id, token);
+    this.armTimers(token);
     this.emitter.emit('wait', { nodeId: token.nodeId, tokenId: token.id, reason });
   }
 
@@ -1342,4 +1455,9 @@ export class WorkflowEngine {
   private emitFinal(): void {
     this.emitter.emit('process.end', { processId: this.rootGraph.process.id, status: this.status });
   }
+}
+
+/** Timers are unique per (token, timer node) pair. */
+function timerKey(tokenId: string, nodeId: string): string {
+  return `${tokenId}:${nodeId}`;
 }
