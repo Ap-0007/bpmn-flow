@@ -1,5 +1,5 @@
 import type { ActivityMetrics, ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';
-import { ExecutionReplay, type ReplayFrame } from './replay.js';
+import type { ReplayFrame } from './replay.js';
 import { layoutProcess } from 'bpmn-auto-layout';
 import { BpmnVisualization, FitType } from 'bpmn-visualization';
 
