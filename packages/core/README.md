@@ -35,6 +35,11 @@ Opções:
 
 - `mode`: `"automation"` (padrão) pausa em tarefas de usuário/captura;
   `"auto"` resolve todas as esperas para simular uma execução completa.
+- `processes`: demais processos do arquivo, para `callActivity` executar o
+  processo referenciado (normalmente `model.processes`).
+- `onHandlerError`: `"fail"` (padrão) derruba a execução; `"incident"` segura o
+  token para alguém retomar.
+- `retry`: `{ attempts, delay? }` — tentativas automáticas antes do incidente.
 - `now`: relógio usado para agendar timers (padrão `Date.now`); injete um falso
   para testar sem esperar.
 - `variables`: variáveis iniciais do processo.
@@ -56,8 +61,13 @@ Métodos:
   junção, escopos e eventos armados.
 - `resume()`: continua uma execução restaurada até concluir ou bloquear.
 - `tasks(filter?)`: trabalho pendente (tarefa de usuário, receive task, evento
-  de captura) com raia, papéis e variáveis visíveis; filtra por `role`,
-  `reason` e `nodeId`.
+  de captura, incidente) com raia, papéis e variáveis visíveis; filtra por
+  `role`, `reason` e `nodeId`.
+- `incidentList()`: atividades cujo handler falhou, com mensagem e tentativas.
+- `retryTask(tokenId)` / `resolveIncident(tokenId, output?)`: roda de novo ou
+  segue em frente.
+- `metrics()`: tempo total/médio/máximo por atividade, do mais lento para o mais
+  rápido.
 - `tick(now?)`: dispara os timers vencidos e continua a execução.
 - `dueTimers()` / `nextTimerAt()`: timers pendentes e o próximo vencimento.
 

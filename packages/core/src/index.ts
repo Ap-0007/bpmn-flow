@@ -25,6 +25,7 @@ export type { HandlerContext, TaskHandler, HandlerSelector } from './engine/hand
 export { evaluateCondition, evaluateExpression } from './engine/expression.js';
 export { Emitter } from './engine/emitter.js';
 export type {
+  ActivityMetrics,
   EngineEvents,
   EngineMode,
   EngineOptions,

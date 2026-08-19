@@ -1,4 +1,5 @@
-import type { ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';
+import type { ActivityMetrics, ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';
+import { ExecutionReplay, type ReplayFrame } from './replay.js';
 import { layoutProcess } from 'bpmn-auto-layout';
 import { BpmnVisualization, FitType } from 'bpmn-visualization';
 
@@ -87,6 +88,48 @@ export class BpmnFlowViewer {
     }
   }
 
+  /**
+   * Paints one step of a replay: everything completed so far plus the node the
+   * token just entered. Use it with {@link ExecutionReplay} to step through a
+   * finished execution.
+   */
+  applyReplayFrame(frame: ReplayFrame): void {
+    const registry = this.visualization.bpmnElementsRegistry;
+    registry.removeAllCssClasses(undefined);
+    this.reapplyTakenFlows();
+    if (frame.completed.length > 0) {
+      registry.addCssClasses(frame.completed, EXECUTION_CLASSES.completed);
+    }
+    if (frame.active) registry.addCssClasses(frame.active, EXECUTION_CLASSES.active);
+  }
+
+  /**
+   * Shows where the time went, as a badge on each activity. Pass the result of
+   * `engine.metrics()`; `format` customizes the label (defaults to seconds).
+   */
+  showMetrics(metrics: ActivityMetrics[], format = formatDuration): void {
+    const registry = this.visualization.bpmnElementsRegistry;
+    for (const entry of metrics) {
+      if (entry.completed === 0) continue;
+      registry.addOverlays(entry.nodeId, {
+        position: 'top-right',
+        label: format(entry),
+        style: {
+          font: { color: '#1b4fa0', size: 11 },
+          fill: { color: '#e4edff', opacity: 90 },
+          stroke: { color: '#1b4fa0', width: 1 },
+        },
+      });
+    }
+  }
+
+  /** Removes the metric badges from every element that has them. */
+  clearMetrics(metrics: ActivityMetrics[]): void {
+    for (const entry of metrics) {
+      this.visualization.bpmnElementsRegistry.removeAllOverlays(entry.nodeId);
+    }
+  }
+
   /** Marks a sequence flow as taken (used for incremental animation). */
   markFlowTaken(flowId: string): void {
     if (!flowId || flowId === '-') return;
@@ -156,4 +199,15 @@ export async function ensureLayout(xml: string): Promise<string> {
   return hasDiagramInterchange(xml) ? xml : await layoutProcess(xml);
 }
 
-export type { ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';
+/** `1.5 s`, `2 min`, `3 h` — short enough for a diagram badge. */
+function formatDuration(entry: ActivityMetrics): string {
+  const ms = entry.averageMs;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)} min`;
+  return `${(ms / 3_600_000).toFixed(1)} h`;
+}
+
+export { ExecutionReplay } from './replay.js';
+export type { ReplayFrame } from './replay.js';
+export type { ActivityMetrics, ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';

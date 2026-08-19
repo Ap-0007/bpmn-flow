@@ -42,6 +42,8 @@ Há dois modos, alternados pelos botões "Executar" e "Editar".
 - O painel mostra status, variáveis e o histórico da execução; o diagrama
   destaca nós concluídos, tokens ativos, atividades em espera e fluxos
   percorridos.
+- "Reprisar" refaz a execução passo a passo a partir do histórico; "Métricas"
+  liga etiquetas de tempo médio em cada atividade.
 - Diagramas sem layout são posicionados automaticamente; use "Ajustar" para
   enquadrar e o mouse para navegar (arrastar) e dar zoom (roda).
 

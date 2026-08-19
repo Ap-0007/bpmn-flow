@@ -156,6 +156,56 @@ multi-instância, cada instância aparece como uma tarefa própria, com o seu it
 No servidor, `GET /api/tasks?role=gerentes` faz o mesmo atravessando todas as
 sessões.
 
+## Quando algo falha: retry e incidentes
+
+Um erro de negócio (`BpmnError`) vai para o evento de borda de erro. Um erro
+técnico — a API caiu, o banco recusou — não deveria matar o processo:
+
+```ts
+const engine = new WorkflowEngine(process, {
+  onHandlerError: 'incident', // segura em vez de falhar
+  retry: { attempts: 3, delay: 'PT30S' }, // tenta de novo antes disso
+});
+
+engine.incidentList(); // [{ nodeId: 'Cobrar', message: 'ECONNRESET', attempts: 4 }]
+await engine.retryTask(tokenId); // roda de novo
+await engine.resolveIncident(tokenId, { cobrado: true }); // ou segue em frente
+```
+
+O padrão continua sendo falhar a execução, então nada muda para quem já usa a
+biblioteca. As retentativas com `delay` usam o mesmo relógio dos timers.
+
+## Compensação: desfazer o que já foi feito
+
+Um evento de borda de compensação, ligado por associação à atividade que desfaz
+o trabalho, permite reverter na ordem inversa — e um evento de cancelamento
+dentro de uma `transaction` faz isso automaticamente antes de sair pelo evento
+de borda de cancelamento:
+
+```
+Reservar voo ──▶ Reservar hotel ──▶ Pagou? ──não──▶ (compensação)
+     ⊗                  ⊗                                │
+Cancelar voo      Cancelar hotel   ◀── desfaz hotel, depois voo
+```
+
+## Métricas e replay
+
+`engine.metrics()` diz onde o tempo foi parar, atividade por atividade, e o
+viewer sabe desenhar isso e reprisar a execução passo a passo:
+
+```ts
+engine.metrics();
+// [{ nodeId: 'Aprovação Gerencial', started: 1, completed: 1, totalMs: 7200000, ... }]
+
+viewer.showMetrics(engine.metrics()); // etiqueta de tempo em cada atividade
+
+const replay = new ExecutionReplay(snapshot.history);
+let frame;
+while ((frame = replay.next())) viewer.applyReplayFrame(frame);
+```
+
+![Tempo médio por atividade sobreposto ao diagrama](docs/media/metricas-por-atividade.png)
+
 ## Timers
 
 Eventos de timer viram data de vencimento. O motor não tem relógio próprio: ele
@@ -334,17 +384,25 @@ modo que reiniciar o servidor não perde execuções em andamento.
 
 ## Padrões BPMN suportados
 
-- Eventos: início, fim (none, terminate, error), intermediários de lançamento e
-  de captura, eventos de borda (interrompentes e não interrompentes), eventos de
-  link pareados e **event subprocess** (interrompente ou não).
-- Sinais são **difundidos**: um `signal()` acorda todos os assinantes.
-- Definições de evento: message, timer, error, signal, escalation.
+- Eventos: início, fim (none, terminate, error, **cancel**, **escalation**,
+  **compensation**), intermediários de lançamento e de captura, eventos de borda
+  (interrompentes e não interrompentes), eventos de link pareados e **event
+  subprocess** (interrompente ou não).
+- Definições de evento: message, timer, error, signal, escalation, conditional,
+  compensation, cancel, terminate e link — **várias por evento**, como um
+  boundary que é mensagem _e_ prazo ao mesmo tempo.
+- Sinais são **difundidos**: um `signal()` acorda todos os assinantes, inclusive
+  receive tasks que esperam aquela mensagem.
 - Atividades: task, userTask, serviceTask, scriptTask, businessRuleTask,
-  sendTask, receiveTask, manualTask, callActivity e subprocessos embutidos.
+  sendTask, receiveTask, manualTask, subprocessos embutidos, **transaction** e
+  **callActivity executando o processo referenciado**.
 - Gateways: exclusivo (com fluxo default), paralelo (junção sincronizada),
-  inclusivo (junção por alcançabilidade), baseado em evento e complexo.
+  inclusivo (junção por alcançabilidade), baseado em evento e **complexo com
+  condição de ativação** (quórum).
 - Repetição: multi-instância paralela e sequencial (por coleção ou cardinalidade,
   com condição de conclusão e coleção de saída) e loop padrão.
+- **Compensação**: evento de borda de compensação ligado por associação à
+  atividade que desfaz o trabalho, disparada em ordem inversa.
 - Fluxos de sequência com condições, colaboração (pools e message flows) e
   raias (lanes) com os papéis de `potentialOwner`.
 
@@ -352,20 +410,17 @@ modo que reiniciar o servidor não perde execuções em andamento.
 
 - **Ciclos de timer disparam uma vez**: `R3/PT10M` é lido como um intervalo de
   10 minutos, sem repetição.
-- **Transações não têm rollback**: `transaction` executa como subprocesso
-  comum; compensação não é executada.
 - **Expressões de condição são avaliadas como JavaScript** sobre as variáveis do
-  processo, assumindo que a definição do diagrama é confiável. Uma expressão que
-  falha é tratada como `false` (fail-closed).
-- **Compensação** é reconhecida pelo parser, mas não tem semântica de execução;
-  o gateway complexo se comporta como inclusivo.
-- **Um evento carrega uma definição só**: eventos com várias definições usam a
-  primeira.
-- **Call activity não executa o processo chamado**: `calledElement` é lido para
-  o modelo, mas a atividade se comporta como uma tarefa comum (pass-through, ou
-  o que um handler registrado fizer).
-- **Sinal não é broadcast**: `signal()` entrega ao primeiro evento de captura
-  correspondente, enquanto a especificação difunde para todos.
+  processo, assumindo que a definição do diagrama é confiável. Variável
+  inexistente lê como `undefined`; expressão que lança é tratada como `false`.
+- **Evento de borda condicional não é auto-avaliado** (o de captura é): dispare-o
+  por `signal()` pelo id.
+- **Mapeamento de dados** (`ioSpecification`, data associations de entrada/saída
+  em call activity) não é executado: o escopo filho enxerga as variáveis do pai.
+- **Correlação de mensagem por chave** não existe; a entrega é por nome da
+  mensagem ou id do elemento.
+- **DMN está fora de escopo**: `businessRuleTask` é o ponto de extensão — ligue
+  um handler ao seu motor de decisão.
 
 ## Desenvolvimento
 

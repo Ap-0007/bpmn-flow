@@ -22,6 +22,7 @@ import {
 } from './state.js';
 import { resolveTimerDueAt } from './timers.js';
 import type {
+  ActivityMetrics,
   EngineEvents,
   EngineOptions,
   ExecutionSnapshot,
@@ -233,6 +234,58 @@ export class WorkflowEngine {
       tasks.push(task);
     }
     return tasks;
+  }
+
+  /**
+   * Where the time went: one entry per activity, ordered by total time spent.
+   * Durations pair each `enter` with the next `complete` of the same node, so a
+   * multi-instance activity reports the sum across its instances.
+   */
+  metrics(): ActivityMetrics[] {
+    const pending = new Map<string, number[]>();
+    const stats = new Map<string, ActivityMetrics>();
+
+    for (const entry of [...this.history].sort((a, b) => a.seq - b.seq)) {
+      const current = stats.get(entry.nodeId) ?? {
+        nodeId: entry.nodeId,
+        nodeKind: entry.nodeKind,
+        started: 0,
+        completed: 0,
+        totalMs: 0,
+        averageMs: 0,
+        maxMs: 0,
+        ...(this.nodeName(entry.nodeId) ? { name: this.nodeName(entry.nodeId) } : {}),
+      };
+      if (entry.event === 'enter') {
+        current.started += 1;
+        const queue = pending.get(entry.nodeId) ?? [];
+        queue.push(entry.at);
+        pending.set(entry.nodeId, queue);
+      } else {
+        current.completed += 1;
+        const startedAt = pending.get(entry.nodeId)?.shift();
+        if (startedAt !== undefined) {
+          const duration = Math.max(0, entry.at - startedAt);
+          current.totalMs += duration;
+          current.maxMs = Math.max(current.maxMs, duration);
+        }
+      }
+      stats.set(entry.nodeId, current);
+    }
+
+    for (const entry of stats.values()) {
+      entry.averageMs = entry.completed > 0 ? entry.totalMs / entry.completed : 0;
+    }
+    return [...stats.values()].sort((a, b) => b.totalMs - a.totalMs);
+  }
+
+  /** Name of a node, looked up across every live scope. */
+  private nodeName(nodeId: string): string | undefined {
+    for (const scope of this.scopes) {
+      const node = scope.graph.node(nodeId);
+      if (node?.name) return node.name;
+    }
+    return undefined;
   }
 
   /** Activities whose handler failed and are holding, newest failure first. */
@@ -875,12 +928,7 @@ export class WorkflowEngine {
       return;
     }
     this.emitter.emit('node.enter', { nodeId: node.id, nodeKind: node.kind, tokenId: token.id });
-    this.history.push({
-      nodeId: node.id,
-      nodeKind: node.kind,
-      event: 'enter',
-      at: this.history.length,
-    });
+    this.record(node, 'enter');
 
     switch (true) {
       case node.kind === 'startEvent':
@@ -1333,7 +1381,7 @@ export class WorkflowEngine {
     const parent = run.parentToken;
     parent.scope.tokens.add(parent);
     this.emitter.emit('activity.end', { nodeId: run.nodeId, tokenId: parent.id });
-    this.completeNode(parent);
+    this.completeNode(parent, { history: false });
     this.leaveViaOutgoing(parent);
   }
 
@@ -1888,21 +1936,30 @@ export class WorkflowEngine {
     return false;
   }
 
-  private completeNode(token: RuntimeToken): void {
+  /**
+   * Marks the node as completed. `history: false` keeps the bookkeeping without
+   * a history entry — used when a repeated activity finishes, since each
+   * instance already recorded its own enter/complete pair.
+   */
+  private completeNode(token: RuntimeToken, options: { history?: boolean } = {}): void {
     this.completedNodes.add(token.nodeId);
     const node = token.scope.graph.node(token.nodeId);
     if (node && this.compensationHandlerFor(token.scope, node.id)) {
       // Remember it so a later compensation event can undo it, newest first.
       this.compensations.push({ activityId: node.id, scopeId: token.scope.id });
     }
-    if (node) {
-      this.history.push({
-        nodeId: node.id,
-        nodeKind: node.kind,
-        event: 'complete',
-        at: this.history.length,
-      });
-    }
+    if (node && options.history !== false) this.record(node, 'complete');
+  }
+
+  /** Appends to the history with the engine clock, keeping order explicit. */
+  private record(node: FlowNode, event: HistoryEntry['event']): void {
+    this.history.push({
+      nodeId: node.id,
+      nodeKind: node.kind,
+      event,
+      at: this.now(),
+      seq: this.history.length,
+    });
   }
 
   private fail(error: Error): void {

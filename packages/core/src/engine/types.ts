@@ -56,7 +56,25 @@ export interface HistoryEntry {
   nodeId: string;
   nodeKind: ElementKind;
   event: 'enter' | 'complete';
+  /** Epoch milliseconds, from the engine clock (`options.now`). */
   at: number;
+  /** Position in the history, so entries stay ordered even at equal times. */
+  seq: number;
+}
+
+/** How much time a process spent on one activity. */
+export interface ActivityMetrics {
+  nodeId: string;
+  nodeKind: ElementKind;
+  name?: string;
+  /** Times the node was entered. */
+  started: number;
+  /** Times it completed. */
+  completed: number;
+  /** Sum of enter→complete durations, in milliseconds. */
+  totalMs: number;
+  averageMs: number;
+  maxMs: number;
 }
 
 export interface ExecutionSnapshot {

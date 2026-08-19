@@ -37,6 +37,10 @@ pending:
   [t1] Preencher Formulário (userTask)
 ```
 
+Quando uma atividade falha e o motor está configurado para segurar incidentes,
+`run` também lista os incidentes abertos com a mensagem e o número de
+tentativas.
+
 Sai com código 1 quando a execução falha, o que serve de porta de qualidade em
 CI para diagramas versionados.
 

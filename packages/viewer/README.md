@@ -31,8 +31,31 @@ viewer.load(xml);
 - `bindEngine(engine)`: reflete o progresso ao vivo a partir dos eventos do
   motor e retorna uma função para desassociar.
 - `markFlowTaken(flowId)`: destaca um fluxo de sequência percorrido.
+- `applyReplayFrame(frame)`: pinta um passo de uma reprise (ver
+  `ExecutionReplay`).
+- `showMetrics(metrics, format?)` / `clearMetrics(metrics)`: etiqueta de tempo
+  por atividade a partir de `engine.metrics()`.
 - `clear()` / `dispose()`.
 - `visualization`: acesso à instância `BpmnVisualization` subjacente.
+
+### Reprisar uma execução
+
+`ExecutionReplay` percorre o histórico passo a passo — sem tocar em DOM, o que
+o torna testável e reutilizável fora do viewer:
+
+```ts
+import { ExecutionReplay } from '@bpmn-flow/viewer';
+
+const replay = new ExecutionReplay(snapshot.history);
+setInterval(() => {
+  const frame = replay.next();
+  if (frame) viewer.applyReplayFrame(frame);
+}, 400);
+```
+
+Cada quadro traz o nó que acabou de ser alcançado, tudo o que já foi concluído e
+o tempo decorrido desde o início. `previous()`, `seek(i)` e `frames()` cobrem
+uma linha do tempo com controle manual.
 
 ### Estilos
 
