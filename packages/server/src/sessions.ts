@@ -56,7 +56,9 @@ export class SessionStore {
   constructor(private readonly storage?: SessionStorage) {}
 
   async create(input: CreateSessionInput): Promise<Session> {
-    const engine = new WorkflowEngine(await firstProcess(input.xml), {
+    const { process, processes } = await readProcesses(input.xml);
+    const engine = new WorkflowEngine(process, {
+      processes,
       ...(input.mode ? { mode: input.mode } : {}),
       ...(input.variables ? { variables: input.variables } : {}),
     });
@@ -179,7 +181,8 @@ export class SessionStore {
     if (cached) return cached;
     const record = await this.storage?.read(id);
     if (!record) return undefined;
-    const engine = WorkflowEngine.restore(await firstProcess(record.xml), record.state);
+    const { process, processes } = await readProcesses(record.xml);
+    const engine = WorkflowEngine.restore(process, record.state, { processes });
     const session: LiveSession = {
       id: record.id,
       xml: record.xml,
@@ -206,11 +209,14 @@ export class SessionStore {
   }
 }
 
-async function firstProcess(xml: string): Promise<ProcessModel> {
+/** The process to run plus every process of the file, for call activities. */
+async function readProcesses(
+  xml: string,
+): Promise<{ process: ProcessModel; processes: ProcessModel[] }> {
   const model = await parseBpmn(xml);
   const process = model.processes[0];
   if (!process) throw new Error('No executable process found.');
-  return process;
+  return { process, processes: model.processes };
 }
 
 function view(session: LiveSession): Session {

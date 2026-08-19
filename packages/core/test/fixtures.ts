@@ -614,3 +614,25 @@ export const MULTI_EVENT_DEFINITIONS = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:sequenceFlow id="fb2" sourceRef="Seguir" targetRef="EndAlt" />
   </bpmn:process>
 </bpmn:definitions>`;
+
+export const CALL_ACTIVITY = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:process id="Cobranca" isExecutable="true" name="Cobrança">
+    <bpmn:startEvent id="CobrancaStart" />
+    <bpmn:serviceTask id="Cobrar" name="Cobrar cartão" />
+    <bpmn:userTask id="ConfirmarCobranca" name="Confirmar cobrança" />
+    <bpmn:endEvent id="CobrancaEnd" />
+    <bpmn:sequenceFlow id="c1" sourceRef="CobrancaStart" targetRef="Cobrar" />
+    <bpmn:sequenceFlow id="c2" sourceRef="Cobrar" targetRef="ConfirmarCobranca" />
+    <bpmn:sequenceFlow id="c3" sourceRef="ConfirmarCobranca" targetRef="CobrancaEnd" />
+  </bpmn:process>
+  <bpmn:process id="Pedido" isExecutable="true" name="Pedido">
+    <bpmn:startEvent id="Start" />
+    <bpmn:callActivity id="Chamar" name="Cobrar do cliente" calledElement="Cobranca" />
+    <bpmn:task id="Enviar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Chamar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Chamar" targetRef="Enviar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Enviar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;

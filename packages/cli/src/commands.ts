@@ -96,8 +96,9 @@ export async function run(xml: string, options: RunOptions = {}): Promise<RunRes
   if (!process) throw new Error('No executable process found in the diagram.');
 
   const engine = options.state
-    ? WorkflowEngine.restore(process, options.state)
+    ? WorkflowEngine.restore(process, options.state, { processes: model.processes })
     : new WorkflowEngine(process, {
+        processes: model.processes,
         ...(options.mode ? { mode: options.mode } : {}),
         ...(options.variables ? { variables: options.variables } : {}),
       });

@@ -1,4 +1,5 @@
 import type { ElementKind } from '../model/kinds.js';
+import type { ProcessModel } from '../model/types.js';
 
 export type ExecutionStatus =
   'idle' | 'running' | 'waiting' | 'completed' | 'terminated' | 'failed';
@@ -80,6 +81,11 @@ export interface EngineOptions {
   maxSteps?: number;
   /** Initial process variables. */
   variables?: Record<string, unknown>;
+  /**
+   * Other processes of the same definitions, so a `callActivity` can execute
+   * the process it references. Usually `model.processes`.
+   */
+  processes?: ProcessModel[];
 }
 
 export interface EngineEvents extends Record<string, unknown> {

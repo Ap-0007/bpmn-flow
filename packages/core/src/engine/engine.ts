@@ -112,6 +112,8 @@ export class WorkflowEngine {
   private readonly history: HistoryEntry[] = [];
 
   private readonly initialVariables: Record<string, unknown>;
+  /** Other processes of the same definitions, so a call activity can run. */
+  private readonly definitions = new Map<string, ProcessModel>();
   private status: ExecutionStatus = 'idle';
   private tokenSeq = 0;
   private scopeSeq = 0;
@@ -130,6 +132,9 @@ export class WorkflowEngine {
     }
     this.rootGraph = new ProcessGraph(process);
     this.initialVariables = { ...(options.variables ?? {}) };
+    for (const callable of options.processes ?? []) {
+      this.definitions.set(callable.id, callable);
+    }
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
     this.mode = options.mode ?? 'automation';
     this.now = options.now ?? (() => Date.now());
@@ -372,7 +377,7 @@ export class WorkflowEngine {
   static restore(
     process: ProcessModel,
     state: EngineState,
-    options: Pick<EngineOptions, 'mode' | 'maxSteps'> = {},
+    options: Pick<EngineOptions, 'mode' | 'maxSteps' | 'processes' | 'now'> = {},
   ): WorkflowEngine {
     if (state.version !== ENGINE_STATE_VERSION) {
       throw new BpmnValidationError(
@@ -388,6 +393,8 @@ export class WorkflowEngine {
       mode: options.mode ?? state.mode,
       maxSteps: options.maxSteps ?? state.maxSteps,
       variables: state.variables,
+      ...(options.processes ? { processes: options.processes } : {}),
+      ...(options.now ? { now: options.now } : {}),
     });
     engine.hydrate(state);
     return engine;
@@ -533,10 +540,11 @@ export class WorkflowEngine {
     if (loopId) return parent.graph;
     if (!hostNodeId) throw new BpmnValidationError(`Child scope ${stored.id} has no host node.`);
     const host = parent.graph.requireNode(hostNodeId);
-    if (!host.process) {
+    const called = this.processFor(host);
+    if (!called) {
       throw new BpmnValidationError(`Host node ${hostNodeId} no longer defines a subprocess.`);
     }
-    return new ProcessGraph(host.process);
+    return new ProcessGraph(called);
   }
 
   // --- Scope & token plumbing -------------------------------------------
@@ -838,7 +846,8 @@ export class WorkflowEngine {
         return;
       case node.kind === 'subProcess' ||
         node.kind === 'transaction' ||
-        node.kind === 'adHocSubProcess':
+        node.kind === 'adHocSubProcess' ||
+        (node.kind === 'callActivity' && this.processFor(node) !== undefined):
         this.handleSubProcess(token, node);
         return;
       default:
@@ -915,8 +924,21 @@ export class WorkflowEngine {
     this.leaveViaOutgoing(token);
   }
 
+  /**
+   * The process an activity runs: the embedded one for a subprocess, or the
+   * process a call activity references, when it is part of the definitions.
+   */
+  private processFor(node: FlowNode): ProcessModel | undefined {
+    if (node.process) return node.process;
+    if (node.kind === 'callActivity' && node.calledElement) {
+      return this.definitions.get(node.calledElement);
+    }
+    return undefined;
+  }
+
   private handleSubProcess(token: RuntimeToken, node: FlowNode): void {
-    if (!node.process) {
+    const called = this.processFor(node);
+    if (!called) {
       // Nothing to run inside: behave as a pass-through activity.
       this.completeNode(token);
       this.leaveViaOutgoing(token);
@@ -925,7 +947,7 @@ export class WorkflowEngine {
     this.emitter.emit('activity.start', { nodeId: node.id, tokenId: token.id });
     token.scope.tokens.delete(token); // suspend parent while child runs
     this.armBoundaryTimers(token);
-    const childGraph = new ProcessGraph(node.process);
+    const childGraph = new ProcessGraph(called);
     const child = this.createScope(childGraph, token, node.id);
     const starts = childGraph.startNodes().filter((s) => !s.event || s.event.kind === 'none');
     if (starts.length === 0) {
