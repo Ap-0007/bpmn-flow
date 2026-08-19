@@ -1,6 +1,6 @@
 import type { ActivityMetrics, ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';
 import type { ReplayFrame } from './replay.js';
-import { layoutProcess } from 'bpmn-auto-layout';
+import { ensureLayout } from './layout.js';
 import { BpmnVisualization, FitType } from 'bpmn-visualization';
 
 /** CSS class names applied to diagram elements to reflect execution state. */
@@ -181,24 +181,6 @@ export class BpmnFlowViewer {
   }
 }
 
-/** True when the XML already carries diagram interchange (layout) data. */
-export function hasDiagramInterchange(xml: string): boolean {
-  return /BPMNDiagram|BPMNPlane|BPMNShape/.test(xml);
-}
-
-/**
- * Returns XML that is guaranteed to carry diagram interchange.
- *
- * A diagram authored purely in terms of semantics (no layout) is positioned
- * with `bpmn-auto-layout`; anything that already has DI is returned untouched.
- * Useful for consumers that require DI, such as a `bpmn-js` modeler.
- *
- * @throws when the layout engine cannot process the XML.
- */
-export async function ensureLayout(xml: string): Promise<string> {
-  return hasDiagramInterchange(xml) ? xml : await layoutProcess(xml);
-}
-
 /** `1.5 s`, `2 min`, `3 h` — short enough for a diagram badge. */
 function formatDuration(entry: ActivityMetrics): string {
   const ms = entry.averageMs;
@@ -208,6 +190,7 @@ function formatDuration(entry: ActivityMetrics): string {
   return `${(ms / 3_600_000).toFixed(1)} h`;
 }
 
+export { ensureLayout, hasDiagramInterchange } from './layout.js';
 export { ExecutionReplay } from './replay.js';
 export type { ReplayFrame } from './replay.js';
 export type { ActivityMetrics, ExecutionSnapshot, WorkflowEngine } from '@bpmn-flow/core';
