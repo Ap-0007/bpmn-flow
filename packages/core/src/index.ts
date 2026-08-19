@@ -8,6 +8,7 @@ export { WorkflowEngine } from './engine/engine.js';
 export { ENGINE_STATE_VERSION } from './engine/state.js';
 export { parseIsoDuration, resolveTimerDueAt } from './engine/timers.js';
 export type {
+  CompensationState,
   EngineState,
   EventChoiceState,
   LoopRunState,

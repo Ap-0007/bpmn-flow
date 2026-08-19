@@ -100,6 +100,10 @@ export interface MdElement {
 
   // process: swimlanes
   laneSets?: { lanes?: MdLane[] }[];
+  /** Artifacts of a process/subprocess: associations, text annotations. */
+  artifacts?: MdElement[];
+  /** Activity that only runs as a compensation handler. */
+  isForCompensation?: boolean;
 
   // sequence flow
   sourceRef?: MdRef;

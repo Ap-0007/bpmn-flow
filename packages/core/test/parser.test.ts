@@ -46,3 +46,34 @@ describe('parseBpmn', () => {
     await expect(parseBpmn(xml)).rejects.toBeInstanceOf(BpmnParseError);
   });
 });
+
+describe('event definition kinds', () => {
+  it('normalizes every trigger to the model vocabulary', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  targetNamespace="t" id="D">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="S" />
+    <bpmn:task id="T" />
+    <bpmn:boundaryEvent id="Comp" attachedToRef="T">
+      <bpmn:compensateEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:endEvent id="Cancel"><bpmn:cancelEventDefinition /></bpmn:endEvent>
+    <bpmn:endEvent id="Term"><bpmn:terminateEventDefinition /></bpmn:endEvent>
+    <bpmn:intermediateCatchEvent id="Cond">
+      <bpmn:conditionalEventDefinition />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f0" sourceRef="S" targetRef="T" />
+  </bpmn:process>
+</bpmn:definitions>`;
+    const [process] = (await parseBpmn(xml)).processes;
+    const kindOf = (id: string): string | undefined =>
+      process!.flowNodes.find((node) => node.id === id)?.event?.kind;
+
+    // `compensateEventDefinition` is the compensation trigger, not "compensate".
+    expect(kindOf('Comp')).toBe('compensation');
+    expect(kindOf('Cancel')).toBe('cancel');
+    expect(kindOf('Term')).toBe('terminate');
+    expect(kindOf('Cond')).toBe('conditional');
+  });
+});

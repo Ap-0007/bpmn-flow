@@ -14,7 +14,7 @@ import type { EngineMode, ExecutionStatus, HistoryEntry, WaitReason } from './ty
  *
  * Bump {@link ENGINE_STATE_VERSION} whenever the shape changes.
  */
-export const ENGINE_STATE_VERSION = 3;
+export const ENGINE_STATE_VERSION = 4;
 
 /** Where a token currently sits, since not every token lives in a scope. */
 export type TokenPlacement =
@@ -61,6 +61,12 @@ export interface LoopRunState {
   started: number;
   completed: number;
   instanceScopeIds: string[];
+}
+
+/** A completed activity that can still be compensated. */
+export interface CompensationState {
+  activityId: string;
+  scopeId: string;
 }
 
 /** A timer waiting to fire. */
@@ -115,6 +121,8 @@ export interface EngineState {
   eventChoices: EventChoiceState[];
   loops: LoopRunState[];
   timers: TimerState[];
+  /** Completed compensable activities, oldest first. */
+  compensations: CompensationState[];
   /** `eventNodeId -> tokenId` of the gateway waiting on that event. */
   armedEvents: [string, string][];
 }

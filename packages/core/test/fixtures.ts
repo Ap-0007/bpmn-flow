@@ -636,3 +636,63 @@ export const CALL_ACTIVITY = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:sequenceFlow id="f2" sourceRef="Enviar" targetRef="End" />
   </bpmn:process>
 </bpmn:definitions>`;
+
+export const COMPENSATION = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="ReservarVoo" name="Reservar voo" />
+    <bpmn:boundaryEvent id="CompVoo" attachedToRef="ReservarVoo">
+      <bpmn:compensateEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="CancelarVoo" name="Cancelar voo" isForCompensation="true" />
+    <bpmn:serviceTask id="ReservarHotel" name="Reservar hotel" />
+    <bpmn:boundaryEvent id="CompHotel" attachedToRef="ReservarHotel">
+      <bpmn:compensateEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="CancelarHotel" name="Cancelar hotel" isForCompensation="true" />
+    <bpmn:exclusiveGateway id="Pagou" default="fFalhou" />
+    <bpmn:endEvent id="ViagemOk" />
+    <bpmn:intermediateThrowEvent id="Desfazer">
+      <bpmn:compensateEventDefinition />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="ViagemCancelada" />
+    <bpmn:association id="a1" sourceRef="CompVoo" targetRef="CancelarVoo" />
+    <bpmn:association id="a2" sourceRef="CompHotel" targetRef="CancelarHotel" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="ReservarVoo" />
+    <bpmn:sequenceFlow id="f1" sourceRef="ReservarVoo" targetRef="ReservarHotel" />
+    <bpmn:sequenceFlow id="f2" sourceRef="ReservarHotel" targetRef="Pagou" />
+    <bpmn:sequenceFlow id="fOk" sourceRef="Pagou" targetRef="ViagemOk">${cond('pago === true')}</bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="fFalhou" sourceRef="Pagou" targetRef="Desfazer" />
+    <bpmn:sequenceFlow id="f3" sourceRef="Desfazer" targetRef="ViagemCancelada" />`);
+
+export const TRANSACTION_CANCEL = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:transaction id="Reserva" name="Reserva">
+      <bpmn:startEvent id="TxStart" />
+      <bpmn:serviceTask id="Debitar" name="Debitar cartão" />
+      <bpmn:boundaryEvent id="CompDebito" attachedToRef="Debitar">
+        <bpmn:compensateEventDefinition />
+      </bpmn:boundaryEvent>
+      <bpmn:serviceTask id="Estornar" name="Estornar" isForCompensation="true" />
+      <bpmn:exclusiveGateway id="Confirmou" default="fCancel" />
+      <bpmn:endEvent id="TxOk" />
+      <bpmn:endEvent id="TxCancel">
+        <bpmn:cancelEventDefinition />
+      </bpmn:endEvent>
+      <bpmn:association id="ta1" sourceRef="CompDebito" targetRef="Estornar" />
+      <bpmn:sequenceFlow id="t0" sourceRef="TxStart" targetRef="Debitar" />
+      <bpmn:sequenceFlow id="t1" sourceRef="Debitar" targetRef="Confirmou" />
+      <bpmn:sequenceFlow id="tOk" sourceRef="Confirmou" targetRef="TxOk">${cond('confirmado === true')}</bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="fCancel" sourceRef="Confirmou" targetRef="TxCancel" />
+    </bpmn:transaction>
+    <bpmn:boundaryEvent id="TxCancelada" attachedToRef="Reserva">
+      <bpmn:cancelEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="AvisarCliente" />
+    <bpmn:task id="Concluir" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndCancelado" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Reserva" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Reserva" targetRef="Concluir" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Concluir" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="TxCancelada" targetRef="AvisarCliente" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="AvisarCliente" targetRef="EndCancelado" />`);

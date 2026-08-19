@@ -9,6 +9,7 @@ import {
   isEventKind,
 } from '../model/kinds.js';
 import type {
+  Association,
   BpmnModel,
   EventDetail,
   FlowNode,
@@ -40,11 +41,17 @@ function toElementKind($type: string): ElementKind | null {
   return ELEMENT_KINDS.has(camel) ? (camel as ElementKind) : null;
 }
 
+/** XSD element names that do not match the model's vocabulary. */
+const KIND_ALIASES: Record<string, EventDefinitionKind> = {
+  // `bpmn:CompensateEventDefinition` is the compensation trigger.
+  compensate: 'compensation',
+};
+
 /** `bpmn:TimerEventDefinition` -> `timer`. */
 function toEventDefinitionKind($type: string): EventDefinitionKind {
   const local = $type.replace(/^[^:]+:/, '').replace(/EventDefinition$/, '');
   const camel = local.charAt(0).toLowerCase() + local.slice(1);
-  return camel as EventDefinitionKind;
+  return KIND_ALIASES[camel] ?? (camel as EventDefinitionKind);
 }
 
 /** One `bpmn:*EventDefinition` turned into a normalized detail. */
@@ -140,6 +147,21 @@ function readLaneAssignments(lanes: MdLane[] | undefined, into: Map<string, stri
   }
 }
 
+/** `bpmn:Association` artifacts, which wire compensation handlers. */
+function readAssociations(artifacts: MdElement[] | undefined): Association[] {
+  const associations: Association[] = [];
+  for (const artifact of artifacts ?? []) {
+    if (!artifact.$type.endsWith(':Association')) continue;
+    if (!artifact.id || !artifact.sourceRef?.id || !artifact.targetRef?.id) continue;
+    associations.push({
+      id: artifact.id,
+      sourceRef: artifact.sourceRef.id,
+      targetRef: artifact.targetRef.id,
+    });
+  }
+  return associations;
+}
+
 interface ScopeAccumulator {
   nodes: FlowNode[];
   flows: SequenceFlow[];
@@ -177,13 +199,16 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
     if (kind === 'startEvent' && el.isInterrupting !== undefined) {
       node.interrupting = el.isInterrupting;
     }
+    if (el.isForCompensation) node.isForCompensation = true;
     if (el.flowElements && el.flowElements.length > 0) {
       const inner = readScope(el.flowElements);
+      const associations = readAssociations(el.artifacts);
       node.process = {
         id: el.id,
         isExecutable: true,
         flowNodes: inner.nodes,
         sequenceFlows: inner.flows,
+        ...(associations.length > 0 ? { associations } : {}),
       };
     }
     nodes.set(node.id, node);
@@ -228,11 +253,13 @@ function readProcess(el: MdElement): ProcessModel {
     if (lane) node.lane = lane;
   }
 
+  const associations = readAssociations(el.artifacts);
   const process: ProcessModel = {
     id: el.id ?? 'process',
     isExecutable: el.isExecutable !== false,
     flowNodes: scope.nodes,
     sequenceFlows: scope.flows,
+    ...(associations.length > 0 ? { associations } : {}),
   };
   if (el.name) process.name = el.name;
   return process;

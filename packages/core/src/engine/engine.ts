@@ -105,6 +105,8 @@ export class WorkflowEngine {
   private readonly inclusiveBuffers = new Map<string, RuntimeToken[]>();
   private readonly eventChoices = new Map<string, EventChoice>();
   private readonly loops = new Map<string, LoopRun>();
+  /** Completed activities that carry a compensation handler, in order. */
+  private readonly compensations: { activityId: string; scopeId: string }[] = [];
   /** Pending timers keyed by `tokenId:nodeId`. */
   private readonly timers = new Map<string, TimerState>();
   private readonly armedEvents = new Map<string, string>();
@@ -353,6 +355,7 @@ export class WorkflowEngine {
       })),
       armedEvents: [...this.armedEvents],
       timers: [...this.timers.values()].map((timer) => ({ ...timer })),
+      compensations: this.compensations.map((entry) => ({ ...entry })),
       loops: [...this.loops.values()].map((run) => ({
         id: run.id,
         nodeId: run.nodeId,
@@ -500,6 +503,7 @@ export class WorkflowEngine {
     for (const timer of state.timers) {
       this.timers.set(timerKey(timer.tokenId, timer.nodeId), { ...timer });
     }
+    for (const entry of state.compensations ?? []) this.compensations.push({ ...entry });
 
     for (const stored of state.loops) {
       const scope = scopesById.get(stored.scopeId);
@@ -820,12 +824,15 @@ export class WorkflowEngine {
       case node.kind === 'endEvent':
         await this.handleEndEvent(token, node);
         return;
-      case node.kind === 'intermediateThrowEvent':
+      case node.kind === 'intermediateThrowEvent': {
         // A link throw jumps to its matching catch instead of flowing on.
-        if (node.event?.kind === 'link' && this.followLink(token, node)) return;
+        if (detailOfKind(node, 'link') && this.followLink(token, node)) return;
+        const compensation = detailOfKind(node, 'compensation');
+        if (compensation) await this.compensate(token.scope, compensation.activityRef);
         this.completeNode(token);
         this.leaveViaOutgoing(token);
         return;
+      }
       case node.kind === 'intermediateCatchEvent':
         this.park(token, 'catchEvent');
         return;
@@ -863,6 +870,16 @@ export class WorkflowEngine {
     const kind = node.event?.kind ?? 'none';
     if (kind === 'terminate') {
       this.terminateScope(token.scope);
+      return;
+    }
+    if (kind === 'compensation') {
+      await this.compensate(token.scope, node.event?.activityRef);
+      this.discard(token);
+      this.checkScopeCompletion(token.scope);
+      return;
+    }
+    if (kind === 'cancel') {
+      await this.cancelTransaction(token);
       return;
     }
     if (kind === 'error') {
@@ -967,6 +984,73 @@ export class WorkflowEngine {
     this.emitter.emit('activity.end', { nodeId: hostId, tokenId: parent.id });
     this.completeNode(parent);
     this.leaveViaOutgoing(parent);
+  }
+
+  // --- Compensation & cancellation ---------------------------------------
+
+  /** The activity that undoes `activityId`, via its compensation boundary. */
+  private compensationHandlerFor(scope: Scope, activityId: string): FlowNode | undefined {
+    for (const boundary of scope.graph.boundaryEvents(activityId)) {
+      if (!detailOfKind(boundary, 'compensation')) continue;
+      for (const targetId of scope.graph.associationsFrom(boundary.id)) {
+        const handler = scope.graph.node(targetId);
+        if (handler) return handler;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Runs the compensation handlers of the scope in reverse completion order —
+   * the last thing done is the first thing undone. `activityRef` narrows it to
+   * a single activity, as a targeted compensation event does.
+   */
+  private async compensate(scope: Scope, activityRef?: string): Promise<void> {
+    for (let index = this.compensations.length - 1; index >= 0; index--) {
+      const entry = this.compensations[index]!;
+      if (entry.scopeId !== scope.id) continue;
+      if (activityRef && entry.activityId !== activityRef) continue;
+      this.compensations.splice(index, 1); // an activity is compensated once
+      const handler = this.compensationHandlerFor(scope, entry.activityId);
+      if (!handler) continue;
+      const token = this.spawn(scope, handler.id);
+      // Run it now: the throw event only continues once the undo is done.
+      this.ready.splice(this.ready.indexOf(token), 1);
+      this.emitter.emit('activity.start', { nodeId: handler.id, tokenId: token.id });
+      await this.processToken(token);
+    }
+  }
+
+  /**
+   * Cancel end event inside a transaction: undo what the transaction already
+   * did, drop the rest of its work and leave through the cancel boundary event.
+   */
+  private async cancelTransaction(token: RuntimeToken): Promise<void> {
+    const scope = token.scope;
+    await this.compensate(scope);
+    this.discard(token);
+
+    const parentToken = scope.parentToken;
+    const hostId = scope.hostNodeId;
+    this.cancelLoopsOf(scope);
+    for (const remaining of [...scope.tokens]) this.discard(remaining);
+    this.removeScope(scope);
+
+    if (!parentToken || !hostId) {
+      // A cancel outside a transaction ends the process instance.
+      this.status = 'terminated';
+      return;
+    }
+    const parentScope = parentToken.scope;
+    this.discard(parentToken);
+    const boundary = parentScope.graph
+      .boundaryEvents(hostId)
+      .find((candidate) => detailOfKind(candidate, 'cancel'));
+    if (boundary) {
+      this.emitBoundary(parentScope, boundary);
+      return;
+    }
+    this.checkScopeCompletion(parentScope);
   }
 
   // --- Multi-instance & loops -------------------------------------------
@@ -1158,6 +1242,10 @@ export class WorkflowEngine {
   private removeScope(scope: Scope): void {
     const index = this.scopes.indexOf(scope);
     if (index >= 0) this.scopes.splice(index, 1);
+    // Nothing left to compensate in a scope that no longer exists.
+    for (let i = this.compensations.length - 1; i >= 0; i--) {
+      if (this.compensations[i]!.scopeId === scope.id) this.compensations.splice(i, 1);
+    }
   }
 
   // --- Gateways ----------------------------------------------------------
@@ -1662,6 +1750,10 @@ export class WorkflowEngine {
   private completeNode(token: RuntimeToken): void {
     this.completedNodes.add(token.nodeId);
     const node = token.scope.graph.node(token.nodeId);
+    if (node && this.compensationHandlerFor(token.scope, node.id)) {
+      // Remember it so a later compensation event can undo it, newest first.
+      this.compensations.push({ activityId: node.id, scopeId: token.scope.id });
+    }
     if (node) {
       this.history.push({
         nodeId: node.id,

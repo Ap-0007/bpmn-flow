@@ -96,6 +96,9 @@ export interface FlowNode {
   /** Complex gateway: expression deciding when the join fires. */
   activationCondition?: string;
 
+  /** Activity that only runs as a compensation handler, never in normal flow. */
+  isForCompensation?: boolean;
+
   /** Sub-processes: id of a called global process (call activity). */
   calledElement?: string;
   /** Event sub-processes are triggered by their start event, not by a token. */
@@ -121,6 +124,16 @@ export interface FlowNode {
   candidates?: string[];
 }
 
+/**
+ * Non-executable connection between elements, used by BPMN to link a
+ * compensation boundary event to the activity that undoes the work.
+ */
+export interface Association {
+  id: string;
+  sourceRef: string;
+  targetRef: string;
+}
+
 /** A participant (pool) in a collaboration. */
 export interface Participant {
   id: string;
@@ -143,6 +156,8 @@ export interface ProcessModel {
   isExecutable: boolean;
   flowNodes: FlowNode[];
   sequenceFlows: SequenceFlow[];
+  /** Associations declared in the scope (compensation wiring). */
+  associations?: Association[];
 }
 
 /** Root of a parsed BPMN file: one or more processes plus collaboration info. */

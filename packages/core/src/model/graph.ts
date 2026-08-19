@@ -55,6 +55,13 @@ export class ProcessGraph {
     return node.incoming.map((id) => this.requireFlow(id));
   }
 
+  /** Elements associated to the given source (compensation wiring). */
+  associationsFrom(sourceId: string): string[] {
+    return (this.process.associations ?? [])
+      .filter((association) => association.sourceRef === sourceId)
+      .map((association) => association.targetRef);
+  }
+
   /** Boundary events attached to the given activity id. */
   boundaryEvents(hostId: string): FlowNode[] {
     return this.boundaryByHost.get(hostId) ?? [];
