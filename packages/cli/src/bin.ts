@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { inspect, run, validate } from './commands.js';
-import type { EngineMode, EngineState } from '@bpmn-flow/core';
+import type { EngineMode, EngineState, TaskHandler } from '@bpmn-flow/core';
 
 const USAGE = `bpmn-flow — BPMN 2.0 from the terminal
 
@@ -12,6 +14,9 @@ const USAGE = `bpmn-flow — BPMN 2.0 from the terminal
 Options for run:
   --vars <json>      initial process variables, e.g. '{"valor":2500}'
   --mode <mode>      automation (default, pauses on user tasks) | auto
+  --handlers <file>  ES module default-exporting { nodeId: handler } automation
+  --incidents        hold a failing activity instead of failing the run
+  --retry <n>        retry a failing handler n times before giving up
   --state <file>     continue a run stored with --save
   --save <file>      write the execution state when it pauses
 `;
@@ -22,6 +27,15 @@ function arg(argv: string[], name: string): string | undefined {
   if (index === -1) return undefined;
   const current = argv[index]!;
   return current.includes('=') ? current.split('=').slice(1).join('=') : argv[index + 1];
+}
+
+/** Imports an ES module whose default export maps selectors to handlers. */
+async function loadHandlers(file: string): Promise<Record<string, TaskHandler>> {
+  const imported = (await import(pathToFileURL(resolve(file)).href)) as {
+    default?: Record<string, TaskHandler>;
+  };
+  if (!imported.default) throw new Error(`${file} must default-export the handlers.`);
+  return imported.default;
 }
 
 async function main(): Promise<number> {
@@ -56,9 +70,16 @@ async function main(): Promise<number> {
       const saveFile = arg(argv, 'save');
       const mode = arg(argv, 'mode') as EngineMode | undefined;
 
+      const handlersFile = arg(argv, 'handlers');
+      const retries = arg(argv, 'retry');
+      const handlers = handlersFile ? await loadHandlers(handlersFile) : undefined;
+
       const result = await run(xml, {
         ...(varsText ? { variables: JSON.parse(varsText) as Record<string, unknown> } : {}),
         ...(mode ? { mode } : {}),
+        ...(handlers ? { handlers } : {}),
+        ...(argv.includes('--incidents') ? { onHandlerError: 'incident' as const } : {}),
+        ...(retries ? { retry: { attempts: Number(retries) } } : {}),
         ...(stateFile
           ? { state: JSON.parse(await readFile(stateFile, 'utf8')) as EngineState }
           : {}),

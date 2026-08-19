@@ -81,3 +81,97 @@ describe('run', () => {
     expect(result.output).toContain('status: completed');
   });
 });
+
+const COM_TIMER_E_POOL = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  targetNamespace="http://bpmn-flow.test" id="Defs">
+  <bpmn:collaboration id="Colab">
+    <bpmn:participant id="Cliente" name="Cliente" processRef="P" />
+    <bpmn:participant id="Loja" name="Loja" />
+    <bpmn:messageFlow id="mf1" name="Pedido" sourceRef="Cliente" targetRef="Loja" />
+  </bpmn:collaboration>
+  <bpmn:process id="P" isExecutable="true" name="Atendimento">
+    <bpmn:startEvent id="Start" />
+    <bpmn:intermediateCatchEvent id="Esperar">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT15M</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:serviceTask id="Tentar" name="Tentar de novo">
+      <bpmn:standardLoopCharacteristics testBefore="false" loopMaximum="3" />
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Esperar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Esperar" targetRef="Tentar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Tentar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+const QUEBRADO = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  targetNamespace="http://bpmn-flow.test" id="Defs">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="Integrar" name="Integrar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Integrar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Integrar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+describe('inspect, deeper', () => {
+  it('lists timers, loops and participants', async () => {
+    const { output } = await inspect(COM_TIMER_E_POOL);
+    expect(output).toContain('timer PT15M');
+    expect(output).toContain('standard loop');
+    expect(output).toContain('participants: Cliente, Loja');
+  });
+});
+
+describe('run with automation', () => {
+  it('runs the handlers it is given', async () => {
+    const seen: string[] = [];
+    const result = await run(QUEBRADO, {
+      handlers: {
+        Integrar: () => {
+          seen.push('Integrar');
+          return { integrado: true };
+        },
+      },
+    });
+    expect(seen).toEqual(['Integrar']);
+    expect(result.snapshot.variables.integrado).toBe(true);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('exits non-zero when a handler blows up', async () => {
+    const result = await run(QUEBRADO, {
+      handlers: {
+        Integrar: () => {
+          throw new Error('502 bad gateway');
+        },
+      },
+    });
+    expect(result.snapshot.status).toBe('failed');
+    expect(result.exitCode).toBe(1);
+  });
+
+  it('reports incidents and retries instead of failing', async () => {
+    let attempts = 0;
+    const result = await run(QUEBRADO, {
+      onHandlerError: 'incident',
+      retry: { attempts: 2 },
+      handlers: {
+        Integrar: () => {
+          attempts += 1;
+          throw new Error('502 bad gateway');
+        },
+      },
+    });
+    expect(attempts).toBe(3);
+    expect(result.output).toContain('incidents:');
+    expect(result.output).toContain('502 bad gateway');
+    expect(result.exitCode).toBe(0);
+  });
+});

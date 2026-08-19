@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -232,5 +232,21 @@ describe('automation and incidents over sessions', () => {
     expect(session.snapshot.status).toBe('completed');
     expect(session.snapshot.variables.concluido).toBe(true);
     expect(await restarted.incidents(created.id)).toHaveLength(0);
+  });
+});
+
+describe('file storage edge cases', () => {
+  it('reports nothing for an unknown session and an unused directory', async () => {
+    const storage = new FileSessionStorage(join(dir, 'ainda-nao-existe'));
+    expect(await storage.read('nao-existe')).toBeUndefined();
+    expect(await storage.remove('nao-existe')).toBe(false);
+    expect(await storage.list()).toEqual([]);
+  });
+
+  it('ignores files that are not sessions', async () => {
+    const storage = new FileSessionStorage(dir);
+    await new SessionStore({ storage }).create({ xml: XML });
+    await writeFile(join(dir, 'anotacao.txt'), 'nao sou uma sessao', 'utf8');
+    expect(await storage.list()).toHaveLength(1);
   });
 });
