@@ -4,6 +4,29 @@
   "description": "Embeddable HTTP server exposing @bpmn-flow/core execution over a REST API and serving an interactive BPMN viewer on a port.",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "bpmn",
+    "bpmn2",
+    "workflow",
+    "workflow-engine",
+    "process-automation",
+    "typescript",
+    "rest-api",
+    "hono",
+    "server"
+  ],
+  "homepage": "https://github.com/Bappoz/bpmn-flow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bappoz/bpmn-flow.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/Bappoz/bpmn-flow/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

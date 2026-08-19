@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="Definitions_Sla" targetNamespace="http://bpmn-flow">
+  <bpmn:process id="Process_Sla" name="Atendimento com SLA" isExecutable="true">
+    <bpmn:laneSet id="Lanes">
+      <bpmn:lane id="LaneSuporte" name="Suporte">
+        <bpmn:flowNodeRef>ChamadoAberto</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Atender</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ChamadoResolvido</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="LaneGerencia" name="Gerência">
+        <bpmn:flowNodeRef>PrazoEstourado</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Escalar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>ChamadoEscalado</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="ChamadoAberto" name="Chamado Aberto" />
+    <bpmn:userTask id="Atender" name="Atender Chamado">
+      <bpmn:potentialOwner>
+        <bpmn:resourceAssignmentExpression>
+          <bpmn:expression xsi:type="bpmn:tFormalExpression">suporte-n1</bpmn:expression>
+        </bpmn:resourceAssignmentExpression>
+      </bpmn:potentialOwner>
+    </bpmn:userTask>
+    <bpmn:boundaryEvent id="PrazoEstourado" name="2h" attachedToRef="Atender">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT2H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:userTask id="Escalar" name="Escalar para Gerência">
+      <bpmn:potentialOwner>
+        <bpmn:resourceAssignmentExpression>
+          <bpmn:expression xsi:type="bpmn:tFormalExpression">gerentes</bpmn:expression>
+        </bpmn:resourceAssignmentExpression>
+      </bpmn:potentialOwner>
+    </bpmn:userTask>
+    <bpmn:endEvent id="ChamadoResolvido" name="Chamado Resolvido" />
+    <bpmn:endEvent id="ChamadoEscalado" name="Chamado Escalado" />
+    <bpmn:sequenceFlow id="f0" sourceRef="ChamadoAberto" targetRef="Atender" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Atender" targetRef="ChamadoResolvido" />
+    <bpmn:sequenceFlow id="fb" sourceRef="PrazoEstourado" targetRef="Escalar" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Escalar" targetRef="ChamadoEscalado" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_Process_Sla">
+    <bpmndi:BPMNPlane id="BPMNPlane_Process_Sla" bpmnElement="Process_Sla">
+      <bpmndi:BPMNShape id="ChamadoAberto_di" bpmnElement="ChamadoAberto">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Atender_di" bpmnElement="Atender">
+        <dc:Bounds x="25" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="PrazoEstourado_di" bpmnElement="PrazoEstourado">
+        <dc:Bounds x="57" y="232" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Escalar_di" bpmnElement="Escalar">
+        <dc:Bounds x="25" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ChamadoResolvido_di" bpmnElement="ChamadoResolvido">
+        <dc:Bounds x="57" y="472" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ChamadoEscalado_di" bpmnElement="ChamadoEscalado">
+        <dc:Bounds x="57" y="612" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

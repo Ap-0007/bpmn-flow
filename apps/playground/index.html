@@ -34,7 +34,7 @@
         </label>
         <input id="save-name" class="name-input" placeholder="nome-do-arquivo" />
         <button id="validate" type="button" class="secondary">Validar</button>
-        <button id="save" type="button">Salvar no repositorio</button>
+        <button id="save" type="button">Salvar no repositório</button>
         <button id="edit-fit" type="button" class="secondary">Ajustar</button>
       </div>
     </header>
@@ -45,33 +45,39 @@
 
       <aside class="panel">
         <div class="panel-block" data-mode="edit" hidden>
-          <h2>Validacao</h2>
+          <h2>Validação</h2>
           <div id="validation" class="validation"></div>
         </div>
 
         <div class="panel-block" data-mode="run">
           <h2>Estado</h2>
-          <p id="status" class="status">Carregue um diagrama para comecar.</p>
+          <p id="status" class="status">Carregue um diagrama para começar.</p>
         </div>
 
         <div class="panel-block" data-mode="run">
-          <h2>Acoes pendentes</h2>
+          <h2>Ações pendentes</h2>
           <div id="actions" class="actions"></div>
         </div>
 
         <div class="panel-block" data-mode="run">
-          <h2>Variaveis</h2>
+          <h2>Timers</h2>
+          <div id="timers" class="timers"></div>
+        </div>
+
+        <div class="panel-block" data-mode="run">
+          <h2>Variáveis</h2>
           <textarea
             id="variables"
             class="variables"
             spellcheck="false"
-            placeholder='{ "amount": 150 }'
-          >{}</textarea>
+            placeholder='{ "valor": 2500 }'
+          >
+{}</textarea>
           <pre id="variables-view" class="variables-view"></pre>
         </div>
 
         <div class="panel-block" data-mode="run">
-          <h2>Historico</h2>
+          <h2>Histórico</h2>
           <ol id="log" class="log"></ol>
         </div>
       </aside>

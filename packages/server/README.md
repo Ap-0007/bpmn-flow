@@ -1,15 +1,17 @@
 # @bpmn-flow/server
 
-Servidor HTTP embutivel que expoe o `@bpmn-flow/core` por uma API REST e serve
-uma interface interativa numa porta. Construido com Hono.
+Servidor HTTP embutível que expõe o `@bpmn-flow/core` por uma API REST e serve
+uma interface interativa numa porta. Construído com Hono.
 
-## Instalacao
+## Instalação
 
 ```bash
 npm install @bpmn-flow/server
 ```
 
-## Uso programatico
+> Ainda não publicado no npm. Para usar hoje: `npm install github:Bappoz/bpmn-flow`.
+
+## Uso programático
 
 ```ts
 import { startServer } from '@bpmn-flow/server';
@@ -22,37 +24,74 @@ const server = startServer({
 // server.close() para encerrar
 ```
 
-Tambem e possivel obter apenas a aplicacao Hono com `createApp(options)` e
-monta-la em um servidor existente.
+Também é possível obter apenas a aplicação Hono com `createApp(options)` e
+montá-la em um servidor existente.
 
 ## CLI
 
 ```bash
-bpmn-flow-serve --port 3000 --static ./dist --samples ./bpmn-files
+bpmn-flow-serve --port 3000 --static ./dist --samples ./bpmn-files --data ./data
 ```
 
-Variaveis de ambiente equivalentes: `PORT`, `STATIC_DIR`, `SAMPLES_DIR`.
+Variáveis de ambiente equivalentes: `PORT`, `STATIC_DIR`, `SAMPLES_DIR`,
+`DATA_DIR`.
 
 ## Endpoints
 
-| Metodo e rota                     | Corpo                          | Descricao                          |
-| --------------------------------- | ------------------------------ | ---------------------------------- |
-| `GET /api/health`                 | -                              | Verificacao de disponibilidade.    |
-| `POST /api/parse`                 | `{ xml }`                      | Modelo normalizado do diagrama.    |
-| `POST /api/validate`              | `{ xml }`                      | Valida a estrutura BPMN.           |
-| `POST /api/sessions`              | `{ xml, mode?, variables? }`   | Cria e inicia uma execucao.        |
-| `GET /api/sessions`               | -                              | Lista as sessoes ativas.           |
-| `GET /api/sessions/:id`           | -                              | Snapshot atual da sessao.          |
-| `POST /api/sessions/:id/complete` | `{ tokenId, output? }`         | Conclui uma tarefa de usuario.     |
-| `POST /api/sessions/:id/signal`   | `{ name, output? }`            | Entrega um sinal/evento.           |
-| `DELETE /api/sessions/:id`        | -                              | Remove a sessao.                   |
-| `GET /api/samples`                | -                              | Lista os `.bpmn` do diretorio.     |
-| `GET /api/samples/:name`          | -                              | Retorna o XML de um exemplo.       |
-| `POST /api/samples`               | `{ name, xml }`                | Valida e salva um `.bpmn` no dir.  |
+| Método e rota                     | Corpo                        | Descrição                             |
+| --------------------------------- | ---------------------------- | ------------------------------------- |
+| `GET /api/health`                 | -                            | Verificação de disponibilidade.       |
+| `POST /api/parse`                 | `{ xml }`                    | Modelo normalizado do diagrama.       |
+| `POST /api/validate`              | `{ xml }`                    | Valida a estrutura BPMN.              |
+| `POST /api/sessions`              | `{ xml, mode?, variables? }` | Cria e inicia uma execução.           |
+| `GET /api/sessions`               | -                            | Resumo das sessões conhecidas.        |
+| `GET /api/sessions/:id`           | -                            | Snapshot atual da sessão.             |
+| `POST /api/sessions/:id/complete` | `{ tokenId, output? }`       | Conclui uma tarefa de usuário.        |
+| `POST /api/sessions/:id/signal`   | `{ name, output? }`          | Entrega um sinal/evento.              |
+| `POST /api/sessions/:id/tick`     | `{ now? }`                   | Dispara os timers vencidos.           |
+| `GET /api/sessions/:id/tasks`     | -                            | Tarefas pendentes da sessão.          |
+| `GET /api/tasks`                  | -                            | Caixa de entrada de todas as sessões. |
+| `DELETE /api/sessions/:id`        | -                            | Remove a sessão.                      |
+| `GET /api/samples`                | -                            | Lista os `.bpmn` do diretório.        |
+| `GET /api/samples/:name`          | -                            | Retorna o XML de um exemplo.          |
+| `POST /api/samples`               | `{ name, xml }`              | Valida e salva um `.bpmn` no dir.     |
 
-As sessoes mantem instancias do motor em memoria, permitindo executar um
-processo passo a passo por HTTP.
+## Caixa de entrada
 
-## Licenca
+`GET /api/tasks` percorre as sessões (inclusive as só existentes em disco) e
+devolve o trabalho pendente com `sessionId`, raia, papéis e variáveis. Aceita
+`?role=`, `?reason=` e `?nodeId=`; sessões concluídas são ignoradas sem
+reconstruir o motor.
+
+```bash
+curl 'http://localhost:3000/api/tasks?role=gerentes'
+```
+
+## Timers
+
+O servidor confere os timers vencidos de todas as sessões a cada
+`timerIntervalMs` (padrão 1000 ms; `0` desliga). Sessões só existentes em disco
+são reconstruídas apenas quando têm um timer realmente vencido.
+
+```ts
+startServer({ port: 3000, dataDir: './data', timerIntervalMs: 5000 });
+```
+
+## Persistência
+
+As sessões ficam em memória por padrão. Com `dataDir` (ou `--data`), cada
+mudança grava um JSON por sessão e uma sessão ausente do cache é reconstruída
+com `WorkflowEngine.restore()` — reiniciar o servidor não perde execuções.
+
+```ts
+import { startServer } from '@bpmn-flow/server';
+
+startServer({ port: 3000, dataDir: './data' });
+```
+
+Para outro backend (Redis, Postgres, S3), implemente `SessionStorage` e passe
+para o `SessionStore`.
+
+## Licença
 
 MIT.

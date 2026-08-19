@@ -12,12 +12,19 @@ import type {
   BpmnModel,
   EventDetail,
   FlowNode,
+  LoopCharacteristics,
   MessageFlow,
   Participant,
   ProcessModel,
   SequenceFlow,
 } from '../model/types.js';
-import type { MdElement, MdEventDefinition } from './moddle-types.js';
+import type {
+  MdElement,
+  MdEventDefinition,
+  MdLane,
+  MdLoopCharacteristics,
+  MdResourceRole,
+} from './moddle-types.js';
 
 const ELEMENT_KINDS = new Set<string>([
   ...EVENT_KINDS,
@@ -49,11 +56,83 @@ function readEventDetail(defs: MdEventDefinition[] | undefined): EventDetail | u
   const timer = def.timeDuration?.body ?? def.timeDate?.body ?? def.timeCycle?.body;
   if (timer) detail.timer = timer;
   const reference =
-    def.messageRef?.name ?? def.signalRef?.name ?? def.errorRef?.name ?? def.escalationRef?.name;
+    def.messageRef?.name ??
+    def.signalRef?.name ??
+    def.errorRef?.name ??
+    def.escalationRef?.name ??
+    // Link events name the definition itself.
+    def.name;
   if (reference) detail.reference = reference;
   const code = def.errorRef?.errorCode ?? def.escalationRef?.escalationCode;
   if (code) detail.code = code;
   return detail;
+}
+
+/**
+ * Reads multi-instance / standard loop characteristics.
+ *
+ * Collections come from `loopDataInputRef`, which the spec models as a
+ * reference to a data element: the referenced element's name (or id) is used as
+ * the process variable holding the array.
+ */
+function readLoopCharacteristics(
+  lc: MdLoopCharacteristics | undefined,
+): LoopCharacteristics | undefined {
+  if (!lc) return undefined;
+  const nameOf = (ref: { id?: string; name?: string } | undefined): string | undefined =>
+    ref ? (ref.name ?? ref.id) : undefined;
+
+  if (lc.$type.endsWith(':StandardLoopCharacteristics')) {
+    const loop: LoopCharacteristics = { kind: 'standard', sequential: true };
+    if (lc.loopCondition?.body) loop.loopCondition = lc.loopCondition.body;
+    if (lc.testBefore !== undefined) loop.testBefore = lc.testBefore;
+    const maximum = lc.loopMaximum === undefined ? undefined : Number(lc.loopMaximum);
+    if (maximum !== undefined && Number.isFinite(maximum)) loop.maximum = maximum;
+    return loop;
+  }
+
+  const loop: LoopCharacteristics = {
+    kind: 'multiInstance',
+    sequential: lc.isSequential === true,
+  };
+  if (lc.loopCardinality?.body) loop.cardinality = lc.loopCardinality.body;
+  const collection = nameOf(lc.loopDataInputRef);
+  if (collection) loop.collection = collection;
+  const elementVariable = nameOf(lc.inputDataItem);
+  if (elementVariable) loop.elementVariable = elementVariable;
+  const outputCollection = nameOf(lc.loopDataOutputRef);
+  if (outputCollection) loop.outputCollection = outputCollection;
+  const outputElement = nameOf(lc.outputDataItem);
+  if (outputElement) loop.outputElement = outputElement;
+  if (lc.completionCondition?.body) loop.completionCondition = lc.completionCondition.body;
+  return loop;
+}
+
+/** Roles from `bpmn:potentialOwner` / `bpmn:performer` resource assignments. */
+function readCandidates(resources: MdResourceRole[] | undefined): string[] {
+  if (!resources) return [];
+  const names: string[] = [];
+  for (const resource of resources) {
+    const expression = resource.resourceAssignmentExpression?.expression?.body ?? resource.name;
+    if (!expression) continue;
+    // A single expression may list several roles: "gerentes, diretoria".
+    for (const part of expression.split(',')) {
+      const name = part.trim();
+      if (name) names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Maps every flow node id to the name of the lane containing it. */
+function readLaneAssignments(lanes: MdLane[] | undefined, into: Map<string, string>): void {
+  for (const lane of lanes ?? []) {
+    const name = lane.name ?? lane.id;
+    for (const ref of lane.flowNodeRef ?? []) {
+      if (ref.id && name) into.set(ref.id, name);
+    }
+    readLaneAssignments(lane.childLaneSet?.lanes, into);
+  }
 }
 
 interface ScopeAccumulator {
@@ -80,7 +159,14 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
     }
     if (el.default?.id) node.default = el.default.id;
     if (el.calledElement) node.calledElement = el.calledElement;
+    const loop = readLoopCharacteristics(el.loopCharacteristics);
+    if (loop) node.loop = loop;
+    const candidates = readCandidates(el.resources);
+    if (candidates.length > 0) node.candidates = candidates;
     if (el.triggeredByEvent) node.triggeredByEvent = true;
+    if (kind === 'startEvent' && el.isInterrupting !== undefined) {
+      node.interrupting = el.isInterrupting;
+    }
     if (el.flowElements && el.flowElements.length > 0) {
       const inner = readScope(el.flowElements);
       node.process = {
@@ -124,6 +210,14 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
 
 function readProcess(el: MdElement): ProcessModel {
   const scope = readScope(el.flowElements ?? []);
+
+  const lanes = new Map<string, string>();
+  for (const laneSet of el.laneSets ?? []) readLaneAssignments(laneSet.lanes, lanes);
+  for (const node of scope.nodes) {
+    const lane = lanes.get(node.id);
+    if (lane) node.lane = lane;
+  }
+
   const process: ProcessModel = {
     id: el.id ?? 'process',
     isExecutable: el.isExecutable !== false,

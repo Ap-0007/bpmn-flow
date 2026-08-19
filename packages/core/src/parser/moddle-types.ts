@@ -12,6 +12,8 @@ export interface MdRef {
 
 export interface MdEventDefinition {
   $type: string;
+  /** Link events carry the name on the definition itself. */
+  name?: string;
   timeDuration?: { body?: string };
   timeDate?: { body?: string };
   timeCycle?: { body?: string };
@@ -19,6 +21,39 @@ export interface MdEventDefinition {
   signalRef?: MdRef & { name?: string };
   errorRef?: MdRef & { name?: string; errorCode?: string };
   escalationRef?: MdRef & { name?: string; escalationCode?: string };
+}
+
+/** `bpmn:MultiInstanceLoopCharacteristics` / `bpmn:StandardLoopCharacteristics`. */
+export interface MdLoopCharacteristics {
+  $type: string;
+  isSequential?: boolean;
+  loopCardinality?: { body?: string };
+  completionCondition?: { body?: string };
+  /** Resolved data object/input holding the collection to iterate. */
+  loopDataInputRef?: MdRef & { name?: string };
+  loopDataOutputRef?: MdRef & { name?: string };
+  inputDataItem?: MdRef & { name?: string };
+  outputDataItem?: MdRef & { name?: string };
+  // standard loop
+  loopCondition?: { body?: string };
+  testBefore?: boolean;
+  loopMaximum?: number | string;
+}
+
+/** `bpmn:PotentialOwner` / `bpmn:Performer` inside an activity. */
+export interface MdResourceRole {
+  $type: string;
+  name?: string;
+  resourceAssignmentExpression?: { expression?: { body?: string } };
+}
+
+/** `bpmn:Lane` with the flow nodes it contains (references resolved). */
+export interface MdLane {
+  $type: string;
+  id?: string;
+  name?: string;
+  flowNodeRef?: MdRef[];
+  childLaneSet?: { lanes?: MdLane[] };
 }
 
 export interface MdElement {
@@ -42,12 +77,23 @@ export interface MdElement {
   eventDefinitions?: MdEventDefinition[];
   attachedToRef?: MdRef;
   cancelActivity?: boolean;
+  /** Start event of an event subprocess: does it cancel the enclosing scope? */
+  isInterrupting?: boolean;
 
   // gateways / activities
   default?: MdRef;
 
   // call activity
   calledElement?: string;
+
+  // activities: multi-instance / standard loop
+  loopCharacteristics?: MdLoopCharacteristics;
+
+  // activities: who is expected to perform the work
+  resources?: MdResourceRole[];
+
+  // process: swimlanes
+  laneSets?: { lanes?: MdLane[] }[];
 
   // sequence flow
   sourceRef?: MdRef;

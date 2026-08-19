@@ -62,9 +62,7 @@ export class ProcessGraph {
 
   /** Nodes with no incoming sequence flow and a start-event kind. */
   startNodes(): FlowNode[] {
-    return this.process.flowNodes.filter(
-      (n) => n.kind === 'startEvent' && n.incoming.length === 0,
-    );
+    return this.process.flowNodes.filter((n) => n.kind === 'startEvent' && n.incoming.length === 0);
   }
 
   allNodes(): FlowNode[] {

@@ -1,4 +1,5 @@
 import { validateBpmn, type ValidationResult } from '@bpmn-flow/core';
+import { ensureLayout } from '@bpmn-flow/viewer';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 
 /** Blank diagram with a single start event, ready to be extended. */
@@ -8,7 +9,7 @@ const BLANK = `<?xml version="1.0" encoding="UTF-8"?>
   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
   id="Definitions_new" targetNamespace="http://bpmn-flow">
   <bpmn:process id="Process_new" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1" name="Inicio" />
+    <bpmn:startEvent id="StartEvent_1" name="Início" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_new">
@@ -39,8 +40,12 @@ export class BpmnEditor {
     this.fit();
   }
 
+  /**
+   * Importa um diagrama no editor. O `bpmn-js` exige interchange de diagrama,
+   * entao diagramas sem layout sao posicionados antes da importacao.
+   */
   async open(xml: string): Promise<void> {
-    await this.modeler.importXML(xml);
+    await this.modeler.importXML(await ensureLayout(xml));
     this.fit();
   }
 

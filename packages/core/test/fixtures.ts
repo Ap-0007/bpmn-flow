@@ -152,3 +152,350 @@ export const CATCH_WAIT = wrap(`
     <bpmn:endEvent id="End" />
     <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="WaitMsg" />
     <bpmn:sequenceFlow id="f1" sourceRef="WaitMsg" targetRef="End" />`);
+
+export const BOUNDARY_NON_INTERRUPTING = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="Escalated" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Work" />
+    <bpmn:boundaryEvent id="OnPing" attachedToRef="Work" cancelActivity="false">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Notify" />
+    <bpmn:endEvent id="EndNotify" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Work" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Work" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="OnPing" targetRef="Notify" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Notify" targetRef="EndNotify" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const SUBPROCESS_ERROR = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:error id="Err" name="OutOfStock" errorCode="OUT_OF_STOCK" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Sub">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:exclusiveGateway id="SubGw" default="sFail" />
+      <bpmn:endEvent id="SubOk" />
+      <bpmn:endEvent id="SubFail">
+        <bpmn:errorEventDefinition errorRef="Err" />
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="s0" sourceRef="SubStart" targetRef="SubGw" />
+      <bpmn:sequenceFlow id="sOk" sourceRef="SubGw" targetRef="SubOk">${cond('ok === true')}</bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="sFail" sourceRef="SubGw" targetRef="SubFail" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="OnSubError" attachedToRef="Sub">
+      <bpmn:errorEventDefinition errorRef="Err" />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="After" />
+    <bpmn:task id="Recover" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndRecovered" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Sub" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="OnSubError" targetRef="Recover" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Recover" targetRef="EndRecovered" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const SUBPROCESS_TERMINATE = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Sub">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:parallelGateway id="SubSplit" />
+      <bpmn:userTask id="SubWork" />
+      <bpmn:endEvent id="SubStop">
+        <bpmn:terminateEventDefinition />
+      </bpmn:endEvent>
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s0" sourceRef="SubStart" targetRef="SubSplit" />
+      <bpmn:sequenceFlow id="sa" sourceRef="SubSplit" targetRef="SubWork" />
+      <bpmn:sequenceFlow id="sb" sourceRef="SubSplit" targetRef="SubStop" />
+      <bpmn:sequenceFlow id="sa2" sourceRef="SubWork" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:task id="After" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Sub" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />`);
+
+export const ENDLESS_LOOP = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:task id="Spin" />
+    <bpmn:exclusiveGateway id="Again" default="fBack" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Spin" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Spin" targetRef="Again" />
+    <bpmn:sequenceFlow id="fBack" sourceRef="Again" targetRef="Spin" />`);
+
+export const PARALLEL_WAIT = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="TaskA" />
+    <bpmn:userTask id="TaskB" />
+    <bpmn:parallelGateway id="Join" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="TaskA" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="TaskB" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="TaskA" targetRef="Join" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="TaskB" targetRef="Join" />
+    <bpmn:sequenceFlow id="fj" sourceRef="Join" targetRef="End" />`);
+
+export const SUBPROCESS_WAIT = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Sub" name="Review">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:userTask id="Review" />
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s1" sourceRef="SubStart" targetRef="Review" />
+      <bpmn:sequenceFlow id="s2" sourceRef="Review" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:task id="After" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Sub" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />`);
+
+export const MI_COLLECTION = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="itens" name="itens" />
+    <bpmn:dataObject id="resultados" name="resultados" />
+    <bpmn:serviceTask id="Handle" name="Handle item">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="item" name="item" />
+        <bpmn:loopDataOutputRef>resultados</bpmn:loopDataOutputRef>
+        <bpmn:outputDataItem id="resultado" name="resultado" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Handle" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Handle" targetRef="End" />`);
+
+export const MI_PARALLEL_USER_TASKS = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="aprovadores" name="aprovadores" />
+    <bpmn:userTask id="Approve" name="Approve">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>aprovadores</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="aprovador" name="aprovador" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Approve" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Approve" targetRef="End" />`);
+
+export const MI_SEQUENTIAL = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Step" name="Step">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:loopCardinality xsi:type="bpmn:tFormalExpression">3</bpmn:loopCardinality>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Step" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Step" targetRef="End" />`);
+
+export const MI_COMPLETION_CONDITION = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="Try" name="Try">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:loopCardinality xsi:type="bpmn:tFormalExpression">10</bpmn:loopCardinality>
+        <bpmn:completionCondition xsi:type="bpmn:tFormalExpression">encontrado === true</bpmn:completionCondition>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Try" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Try" targetRef="End" />`);
+
+export const MI_SUBPROCESS = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="pedidos" name="pedidos" />
+    <bpmn:subProcess id="Handle" name="Handle order">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>pedidos</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="pedido" name="pedido" />
+      </bpmn:multiInstanceLoopCharacteristics>
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:serviceTask id="Charge" />
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s1" sourceRef="SubStart" targetRef="Charge" />
+      <bpmn:sequenceFlow id="s2" sourceRef="Charge" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Handle" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Handle" targetRef="End" />`);
+
+export const STANDARD_LOOP = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="Retry" name="Retry">
+      <bpmn:standardLoopCharacteristics testBefore="true" loopMaximum="5">
+        <bpmn:loopCondition xsi:type="bpmn:tFormalExpression">pago !== true</bpmn:loopCondition>
+      </bpmn:standardLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Retry" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Retry" targetRef="End" />`);
+
+export const TIMER_CATCH = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:intermediateCatchEvent id="Wait5m" name="Aguardar 5 min">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT5M</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="After" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Wait5m" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Wait5m" targetRef="After" />
+    <bpmn:sequenceFlow id="f2" sourceRef="After" targetRef="End" />`);
+
+export const TIMER_BOUNDARY = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Approve" name="Aprovar" />
+    <bpmn:boundaryEvent id="Deadline" attachedToRef="Approve">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT2H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Escalate" name="Escalar" />
+    <bpmn:endEvent id="EndEscalated" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Approve" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Approve" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Deadline" targetRef="Escalate" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Escalate" targetRef="EndEscalated" />`);
+
+export const LANES_AND_ROLES = wrap(`
+    <bpmn:laneSet id="Lanes">
+      <bpmn:lane id="LaneVendas" name="Vendas">
+        <bpmn:flowNodeRef>Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Registrar</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="LaneFinanceiro" name="Financeiro">
+        <bpmn:flowNodeRef>Aprovar</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Registrar" name="Registrar pedido" />
+    <bpmn:userTask id="Aprovar" name="Aprovar pagamento">
+      <bpmn:potentialOwner>
+        <bpmn:resourceAssignmentExpression>
+          <bpmn:formalExpression>gerentes, diretoria</bpmn:formalExpression>
+        </bpmn:resourceAssignmentExpression>
+      </bpmn:potentialOwner>
+    </bpmn:userTask>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Registrar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Registrar" targetRef="Aprovar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Aprovar" targetRef="End" />`);
+
+export const LINK_EVENTS = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:task id="Prepare" />
+    <bpmn:intermediateThrowEvent id="GoTo">
+      <bpmn:linkEventDefinition name="Continua" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:task id="Skipped" />
+    <bpmn:intermediateCatchEvent id="Here">
+      <bpmn:linkEventDefinition name="Continua" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="Finish" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Prepare" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Prepare" targetRef="GoTo" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Here" targetRef="Finish" />
+    <bpmn:sequenceFlow id="f3" sourceRef="Finish" targetRef="End" />
+    <bpmn:sequenceFlow id="f4" sourceRef="Skipped" targetRef="End" />`);
+
+export const SIGNAL_BROADCAST = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="Publicado" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:intermediateCatchEvent id="WaitA">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="WaitB">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:parallelGateway id="Join" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="WaitA" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="WaitB" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="WaitA" targetRef="Join" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="WaitB" targetRef="Join" />
+    <bpmn:sequenceFlow id="fj" sourceRef="Join" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const EVENT_SUBPROCESS_SIGNAL = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="PedidoCancelado" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Work" name="Separar pedido" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Work" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Work" targetRef="End" />
+    <bpmn:subProcess id="OnCancel" triggeredByEvent="true">
+      <bpmn:startEvent id="CancelStart" isInterrupting="true">
+        <bpmn:signalEventDefinition signalRef="Sig" />
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="Refund" name="Estornar" />
+      <bpmn:endEvent id="CancelEnd" />
+      <bpmn:sequenceFlow id="c1" sourceRef="CancelStart" targetRef="Refund" />
+      <bpmn:sequenceFlow id="c2" sourceRef="Refund" targetRef="CancelEnd" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const EVENT_SUBPROCESS_NON_INTERRUPTING = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="ClientePerguntou" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Work" name="Produzir" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Work" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Work" targetRef="End" />
+    <bpmn:subProcess id="OnQuestion" triggeredByEvent="true">
+      <bpmn:startEvent id="QuestionStart" isInterrupting="false">
+        <bpmn:signalEventDefinition signalRef="Sig" />
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="Answer" name="Responder" />
+      <bpmn:endEvent id="QuestionEnd" />
+      <bpmn:sequenceFlow id="q1" sourceRef="QuestionStart" targetRef="Answer" />
+      <bpmn:sequenceFlow id="q2" sourceRef="Answer" targetRef="QuestionEnd" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const EVENT_SUBPROCESS_ERROR = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:error id="Err" name="SemEstoque" errorCode="SEM_ESTOQUE" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="Reserve" name="Reservar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Reserve" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Reserve" targetRef="End" />
+    <bpmn:subProcess id="OnError" triggeredByEvent="true">
+      <bpmn:startEvent id="ErrorStart">
+        <bpmn:errorEventDefinition errorRef="Err" />
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="Notify" name="Avisar comprador" />
+      <bpmn:endEvent id="ErrorEnd" />
+      <bpmn:sequenceFlow id="e1" sourceRef="ErrorStart" targetRef="Notify" />
+      <bpmn:sequenceFlow id="e2" sourceRef="Notify" targetRef="ErrorEnd" />
+    </bpmn:subProcess>
+  </bpmn:process>
+</bpmn:definitions>`;

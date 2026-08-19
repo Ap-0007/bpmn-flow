@@ -1,11 +1,17 @@
 /**
- * Condition-expression evaluation for sequence flow guards.
+ * Expression evaluation for sequence-flow guards, loop cardinalities and
+ * completion conditions.
  *
- * BPMN condition expressions are part of a *trusted* process definition (the
- * same trust level as the diagram author), so they are evaluated as JavaScript
- * over the current process variables. Expressions may optionally be wrapped in
- * `${ ... }`. A failed or non-boolean evaluation is treated as `false` so a
- * malformed guard never crashes the engine.
+ * BPMN expressions are part of a *trusted* process definition (the same trust
+ * level as the diagram author), so they are evaluated as JavaScript over the
+ * current process variables. Expressions may optionally be wrapped in
+ * `${ ... }`.
+ *
+ * A variable that does not exist reads as `undefined` instead of throwing —
+ * `pago !== true` is true before anything sets `pago`, as engines with a FEEL
+ * evaluator behave. Globals such as `Math`, `Date` and `JSON` stay reachable.
+ * An expression that still throws is treated as `undefined` (and therefore
+ * `false` as a condition), so a malformed guard never crashes the engine.
  */
 
 const WRAPPER = /^\s*\$\{([\s\S]*)\}\s*$/;
@@ -17,8 +23,8 @@ function compile(expression: string): (scope: Record<string, unknown>) => unknow
   if (cached) return cached;
 
   const body = expression.replace(WRAPPER, '$1').trim();
-  // `scope` is destructured so variables are addressable as bare identifiers,
-  // while unknown identifiers resolve to `undefined` instead of throwing.
+  // `with` over a proxy: the `has` trap claims every non-global identifier so
+  // unknown names resolve to `undefined` rather than raising a ReferenceError.
   const fn = new Function(
     'scope',
     `with (scope) { try { return (${body}); } catch { return undefined; } }`,
@@ -27,14 +33,30 @@ function compile(expression: string): (scope: Record<string, unknown>) => unknow
   return fn;
 }
 
-/** Evaluates an expression to a boolean against `variables`. */
-export function evaluateCondition(
+/**
+ * Evaluates an expression and returns its raw value, or `undefined` when it
+ * throws. Used for non-boolean expressions such as a loop cardinality.
+ */
+export function evaluateExpression(
   expression: string,
   variables: Record<string, unknown>,
-): boolean {
+): unknown {
   try {
-    return compile(expression)(variables) === true;
+    return compile(expression)(scopeFor(variables));
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/** Wraps the variables so bare identifiers never raise a ReferenceError. */
+function scopeFor(variables: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(variables, {
+    has: (target, key) => Reflect.has(target, key) || !(key in globalThis),
+    get: (target, key) => (key === Symbol.unscopables ? undefined : Reflect.get(target, key)),
+  });
+}
+
+/** Evaluates an expression to a boolean against `variables`. */
+export function evaluateCondition(expression: string, variables: Record<string, unknown>): boolean {
+  return evaluateExpression(expression, variables) === true;
 }

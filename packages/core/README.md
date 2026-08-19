@@ -1,48 +1,92 @@
 # @bpmn-flow/core
 
-Parser BPMN 2.0 e motor de execucao por tokens. Isomorfico (Node e navegador),
-sem dependencias de UI.
+Parser BPMN 2.0 e motor de execução por tokens. Isomórfico (Node e navegador),
+sem dependências de UI.
 
-## Instalacao
+## Instalação
 
 ```bash
 npm install @bpmn-flow/core
 ```
 
+> Ainda não publicado no npm. Para usar hoje: `npm install github:Bappoz/bpmn-flow`.
+
 ## API
 
 ### `parseBpmn(xml): Promise<BpmnModel>`
 
-Converte XML BPMN 2.0 em um modelo normalizado e serializavel. Reconhece todos
-os tipos de no (eventos e suas definicoes, tarefas, gateways e subprocessos),
-fluxos de sequencia com condicoes e colaboracao. A interchange de diagrama (DI)
-e ignorada; o `@bpmn-flow/viewer` renderiza a partir do XML.
+Converte XML BPMN 2.0 em um modelo normalizado e serializável. Reconhece todos
+os tipos de nó (eventos e suas definições, tarefas, gateways e subprocessos),
+fluxos de sequência com condições e colaboração. A interchange de diagrama (DI)
+é ignorada; o `@bpmn-flow/viewer` renderiza a partir do XML.
 
-Lanca `BpmnParseError` para XML invalido ou sem processo.
+Lança `BpmnParseError` para XML inválido ou sem processo.
+
+### `validateBpmn(xml): Promise<ValidationResult>`
+
+Valida a estrutura do diagrama (processo sem evento de início ou de fim, nós
+desconectados, fluxos órfãos) e devolve erros e avisos.
 
 ### `new WorkflowEngine(process, options?)`
 
 Executa um `ProcessModel` movimentando tokens pelo grafo.
 
-Opcoes:
+Opções:
 
-- `mode`: `"automation"` (padrao) pausa em tarefas de usuario/captura;
-  `"auto"` resolve todas as esperas para simular uma execucao completa.
-- `variables`: variaveis iniciais do processo.
-- `maxSteps`: limite de transicoes (protecao contra loops infinitos).
+- `mode`: `"automation"` (padrão) pausa em tarefas de usuário/captura;
+  `"auto"` resolve todas as esperas para simular uma execução completa.
+- `now`: relógio usado para agendar timers (padrão `Date.now`); injete um falso
+  para testar sem esperar.
+- `variables`: variáveis iniciais do processo.
+- `maxSteps`: limite de transições (proteção contra loops infinitos).
 
-Metodos:
+Métodos:
 
-- `registerHandler(selector, handler)`: registra automacao por id do no, tipo
+- `registerHandler(selector, handler)`: registra automação por id do nó, tipo
   de elemento ou `*`.
-- `start(): Promise<ExecutionSnapshot>`: inicia e roda ate concluir ou bloquear.
+- `start(): Promise<ExecutionSnapshot>`: inicia e roda até concluir ou bloquear.
 - `completeTask(tokenId, output?)`: conclui uma tarefa parada e prossegue.
 - `signal(nameOrId, output?)`: entrega um gatilho (catch event, gateway baseado
   em evento ou boundary event).
 - `on(event, listener)`: observa `node.enter`, `node.leave`, `activity.start`,
   `activity.end`, `flow.take`, `wait`, `process.start`, `process.end`, `error`.
-- `snapshot()`: estado atual (status, variaveis, tokens, nos concluidos,
-  historico).
+- `snapshot()`: estado atual (status, variáveis, tokens, nós concluídos,
+  histórico) — read model para UI.
+- `getState()`: estado completo e serializável da execução, incluindo buffers de
+  junção, escopos e eventos armados.
+- `resume()`: continua uma execução restaurada até concluir ou bloquear.
+- `tasks(filter?)`: trabalho pendente (tarefa de usuário, receive task, evento
+  de captura) com raia, papéis e variáveis visíveis; filtra por `role`,
+  `reason` e `nodeId`.
+- `tick(now?)`: dispara os timers vencidos e continua a execução.
+- `dueTimers()` / `nextTimerAt()`: timers pendentes e o próximo vencimento.
+
+### `WorkflowEngine.restore(process, state, options?)`
+
+Reconstrói um motor a partir de um `EngineState` produzido por `getState()`,
+para retomar depois de um restart. O modelo do processo precisa ser o mesmo;
+handlers e listeners não são serializados e devem ser registrados de novo.
+
+```ts
+const state = engine.getState();
+const retomado = WorkflowEngine.restore(process, JSON.parse(JSON.stringify(state)));
+```
+
+### Repetição e escopo de variáveis
+
+Uma atividade com `multiInstanceLoopCharacteristics` ou
+`standardLoopCharacteristics` é expandida em instâncias pelo motor. Cada
+instância roda num escopo próprio com `loopCounter` e o item da coleção, e a
+coleção de saída é montada a partir da variável de saída de cada instância.
+
+```ts
+engine.registerHandler('SepararItem', (ctx) => ({
+  separado: `${ctx.get('item')} separado`,
+}));
+```
+
+No `HandlerContext`, `set()` escreve onde a variável já existe (caindo no escopo
+do processo) e `setLocal()` mantém o valor apenas no escopo atual.
 
 ### Handlers
 
@@ -55,16 +99,17 @@ engine.registerHandler('serviceTask', async (ctx) => {
 });
 ```
 
-Retornar um objeto mescla valores nas variaveis. Lancar `BpmnError(code)`
+Retornar um objeto mescla valores nas variáveis. Lançar `BpmnError(code)`
 dispara um error boundary event correspondente.
 
-## Padroes suportados
+## Padrões suportados
 
-Eventos (start/end/intermediate/boundary), definicoes message/timer/error/
+Eventos (start/end/intermediate/boundary), definições message/timer/error/
 signal/escalation, todas as tarefas, subprocessos, call activities e gateways
-exclusivo/paralelo/inclusivo/baseado em evento/complexo. Detalhes no
-[README raiz](../../README.md#padroes-bpmn-suportados).
+exclusivo/paralelo/inclusivo/baseado em evento/complexo. A semântica de cada um
+e as divergências assumidas estão em
+[`docs/BPMN-STANDARD.md`](../../docs/BPMN-STANDARD.md).
 
-## Licenca
+## Licença
 
 MIT.

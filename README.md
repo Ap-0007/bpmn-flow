@@ -1,64 +1,84 @@
 # BPMN Flow
 
-Biblioteca modular para transformar diagramas BPMN 2.0 em automacao de
+[![CI](https://github.com/Bappoz/bpmn-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/Bappoz/bpmn-flow/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](#requisitos)
+
+Biblioteca modular para transformar diagramas BPMN 2.0 em automação de
 processos. Faz o parsing do BPMN para um modelo normalizado, executa o processo
-com um motor baseado em tokens e permite visualizar a execucao de forma
-interativa no navegador. Cada camada e um pacote independente e reutilizavel em
+com um motor baseado em **tokens** e permite visualizar a execução de forma
+interativa no navegador. Cada camada é um pacote independente e reutilizável em
 qualquer projeto.
 
-## Indice
+O diagrama não é documentação: a especificação da OMG define semântica de
+execução para cada símbolo. É essa semântica — divisão e sincronização de
+gateways, eventos de borda, escopos de subprocesso, cancelamento por terminate —
+que o motor implementa.
+
+![Execução passo a passo de um processo de compras](docs/media/execucao-passo-a-passo.png)
+
+## Índice
 
 - [Arquitetura](#arquitetura)
 - [Requisitos](#requisitos)
-- [Instalacao](#instalacao)
-- [Inicio rapido: usar como biblioteca](#inicio-rapido-usar-como-biblioteca)
-- [Automacao com handlers](#automacao-com-handlers)
-- [Visualizacao interativa](#visualizacao-interativa)
+- [Instalação](#instalação)
+- [Início rápido: usar como biblioteca](#início-rápido-usar-como-biblioteca)
+- [Automação com handlers](#automação-com-handlers)
+- [Visualização interativa](#visualização-interativa)
+- [Playground](#playground)
 - [Servidor HTTP e API REST](#servidor-http-e-api-rest)
-- [Padroes BPMN suportados](#padroes-bpmn-suportados)
+- [Padrões BPMN suportados](#padrões-bpmn-suportados)
+- [Limitações conhecidas](#limitações-conhecidas)
 - [Desenvolvimento](#desenvolvimento)
-- [Estrutura do repositorio](#estrutura-do-repositorio)
-- [Licenca](#licenca)
+- [Estrutura do repositório](#estrutura-do-repositório)
+- [Licença](#licença)
 
 ## Arquitetura
 
-O repositorio e um monorepo (npm workspaces) com quatro modulos:
+O repositório é um monorepo (npm workspaces) com quatro módulos:
 
-| Pacote                  | Responsabilidade                                                              | Ambiente      |
-| ----------------------- | ---------------------------------------------------------------------------- | ------------- |
-| `@bpmn-flow/core`       | Parser BPMN 2.0, modelo normalizado e motor de execucao por tokens.          | Node e browser |
-| `@bpmn-flow/viewer`     | Renderizacao interativa sobre `bpmn-visualization` com overlays de execucao. | Browser       |
-| `@bpmn-flow/server`     | API REST sobre o `core` e host estatico para servir uma UI numa porta.       | Node          |
-| `@bpmn-flow/playground` | Aplicacao Vite para carregar, visualizar e executar processos no navegador.  | Browser       |
+| Pacote                  | Responsabilidade                                                             | Ambiente       |
+| ----------------------- | ---------------------------------------------------------------------------- | -------------- |
+| `@bpmn-flow/core`       | Parser BPMN 2.0, modelo normalizado e motor de execução por tokens.          | Node e browser |
+| `@bpmn-flow/viewer`     | Renderização interativa sobre `bpmn-visualization` com overlays de execução. | Browser        |
+| `@bpmn-flow/server`     | API REST sobre o `core` e host estático para servir uma UI numa porta.       | Node           |
+| `@bpmn-flow/cli`        | `bpmn-flow validate/inspect/run` para usar o motor no terminal.              | Node           |
+| `@bpmn-flow/playground` | Aplicação Vite para carregar, visualizar e executar processos no navegador.  | Browser        |
 
 Fluxo de dados: `XML BPMN -> parseBpmn -> ProcessModel -> WorkflowEngine ->
 ExecutionSnapshot -> BpmnFlowViewer`.
 
-O `core` nao depende de nenhuma biblioteca de UI, o que permite executar
-processos tanto no backend quanto no frontend com o mesmo codigo.
+O `core` não depende de nenhuma biblioteca de UI, o que permite executar
+processos tanto no backend quanto no frontend com o mesmo código. Detalhes de
+design em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); a aderência à
+especificação, elemento por elemento, em
+[`docs/BPMN-STANDARD.md`](docs/BPMN-STANDARD.md).
 
 ## Requisitos
 
 - Node.js 20 ou superior
 - npm 10 ou superior
 
-## Instalacao
+## Instalação
 
-Para desenvolver neste repositorio:
+Para desenvolver neste repositório:
 
 ```bash
 npm install
 npm run build
 ```
 
-Para consumir os pacotes em outro projeto (apos publicacao):
+Os pacotes ainda **não estão publicados no npm**. Para consumi-los em outro
+projeto hoje, use o repositório direto:
 
 ```bash
-npm install @bpmn-flow/core
-npm install @bpmn-flow/viewer   # apenas no frontend
+npm install github:Bappoz/bpmn-flow
 ```
 
-## Inicio rapido: usar como biblioteca
+Quando forem publicados, a instalação será por pacote (`@bpmn-flow/core`,
+`@bpmn-flow/viewer`).
+
+## Início rápido: usar como biblioteca
 
 ```ts
 import { parseBpmn, WorkflowEngine } from '@bpmn-flow/core';
@@ -67,7 +87,7 @@ const model = await parseBpmn(xml);
 const [process] = model.processes;
 
 const engine = new WorkflowEngine(process, {
-  variables: { amount: 150 },
+  variables: { valor: 2500 },
 });
 
 const snapshot = await engine.start();
@@ -76,29 +96,134 @@ console.log(snapshot.completedNodes);
 console.log(snapshot.variables);
 ```
 
-Se o processo tiver uma tarefa de usuario ou um evento de captura, a execucao
+Se o processo tiver uma tarefa de usuário ou um evento de captura, a execução
 pausa (`status: "waiting"`) e informa os tokens parados. Retome-a assim:
 
 ```ts
 const waiting = snapshot.tokens.find((t) => t.waiting);
 if (waiting?.waitReason === 'userTask') {
-  await engine.completeTask(waiting.id, { approved: true });
+  await engine.completeTask(waiting.id, { aprovado: true });
 } else if (waiting?.waitReason === 'catchEvent') {
   await engine.signal(waiting.nodeId);
 }
 ```
 
-## Automacao com handlers
+### Pausar e retomar
 
-Um handler executa o trabalho real por tras de uma atividade. Registre-o por id
-do elemento, por tipo de elemento ou com o coringa `*`. A resolucao segue da
-regra mais especifica para a mais generica.
+A execução inteira é serializável, então um processo pode atravessar um restart,
+uma fila ou um banco de dados:
+
+```ts
+const state = engine.getState(); // JSON puro: tokens, escopos, buffers de junção
+await db.save(id, state);
+
+// Em outro processo, mais tarde:
+const retomado = WorkflowEngine.restore(process, await db.load(id));
+retomado.registerHandler('serviceTask', handler); // handlers não são serializáveis
+await retomado.completeTask(tokenId);
+```
+
+`getState()` guarda o que o `snapshot()` não guarda: contagem de chegadas em
+junção paralela, tokens em espera numa junção inclusiva, alternativas armadas de
+gateway baseado em evento e a árvore de escopos de subprocesso.
+
+Exemplo executável de ponta a ponta (handler, gateway condicional e retomada de
+tarefa): [`examples/quickstart.mjs`](examples/quickstart.mjs).
+
+```bash
+npm run build && node examples/quickstart.mjs
+```
+
+## Caixa de entrada: quem executa o quê
+
+Raias e `potentialOwner` viram atribuição, e o motor expõe a lista de trabalho
+pendente — a caixa de entrada que uma UI renderiza:
+
+```ts
+engine.tasks();
+// [{ tokenId, nodeId: 'Aprovar', name: 'Aprovar pagamento',
+//    lane: 'Financeiro', candidates: ['gerentes'], reason: 'userTask',
+//    variables: { pedido: 42 } }]
+
+engine.tasks({ role: 'gerentes' }); // só o que esse papel pode executar
+```
+
+O filtro casa tanto com a raia quanto com os papéis declarados. Numa atividade
+multi-instância, cada instância aparece como uma tarefa própria, com o seu item:
+
+![Três tarefas de aprovação, uma por aprovador](docs/media/multi-instancia-tarefas.png)
+
+No servidor, `GET /api/tasks?role=gerentes` faz o mesmo atravessando todas as
+sessões.
+
+## Timers
+
+Eventos de timer viram data de vencimento. O motor não tem relógio próprio: ele
+calcula o vencimento e alguém decide quando conferir — o que mantém o `core`
+testável e determinístico.
+
+```ts
+const engine = new WorkflowEngine(process); // `now` injetável para testes
+await engine.start();
+
+engine.nextTimerAt(); // epoch ms do próximo vencimento
+await engine.tick(); // dispara o que venceu e continua a execução
+```
+
+Funciona com duração (`PT5M`), data absoluta (`2026-08-20T10:00:00Z`) e ciclo
+(`R3/PT10M`, disparando uma vez), tanto em evento de captura quanto em evento de
+borda — um prazo de atendimento que escala sozinho, por exemplo. O
+`@bpmn-flow/server` já faz esse `tick` periodicamente.
+
+![Tarefa com raia e papel, e o timer do SLA correndo](docs/media/timer-e-atribuicao.png)
+
+## Repetição: multi-instância e loop
+
+Uma atividade multi-instância roda uma vez por item de uma coleção (ou uma
+quantidade fixa), em paralelo ou uma de cada vez. Cada instância ganha o **seu
+próprio escopo de variáveis**, então `item` e `loopCounter` não vazam para o
+processo:
+
+```xml
+<bpmn:dataObject id="itens" name="itens" />
+<bpmn:dataObject id="separados" name="separados" />
+
+<bpmn:serviceTask id="SepararItem" name="Separar Item">
+  <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+    <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+    <bpmn:inputDataItem id="item" name="item" />
+    <bpmn:loopDataOutputRef>separados</bpmn:loopDataOutputRef>
+    <bpmn:outputDataItem id="separado" name="separado" />
+  </bpmn:multiInstanceLoopCharacteristics>
+</bpmn:serviceTask>
+```
+
+```ts
+engine.registerHandler('SepararItem', (ctx) => ({
+  separado: `${ctx.get('item')} separado`, // vira um item de "separados"
+}));
+
+const snapshot = await engine.start(); // uma instância por item de "itens"
+snapshot.variables.separados; // ["teclado separado", "mouse separado", ...]
+```
+
+Variáveis seguem escopo: a leitura sobe a cadeia (instância → subprocesso →
+processo) e a escrita vai para onde a variável já existe, caindo no processo
+quando ela é nova. Um handler pode forçar o escopo local com `ctx.setLocal()`.
+
+Diagrama de exemplo: [`bpmn-files/processo-pedido-itens.bpmn`](bpmn-files/processo-pedido-itens.bpmn).
+
+## Automação com handlers
+
+Um handler executa o trabalho real por trás de uma atividade. Registre-o por id
+do elemento, por tipo de elemento ou com o coringa `*`. A resolução segue da
+regra mais específica para a mais genérica.
 
 ```ts
 engine.registerHandler('serviceTask', async (ctx) => {
-  const total = await cobrarCartao(ctx.get('amount'));
+  const total = await cobrarCartao(ctx.get('valor'));
   ctx.set('total', total);
-  return { pago: true }; // valores retornados sao mesclados nas variaveis
+  return { pago: true }; // valores retornados são mesclados nas variáveis
 });
 
 engine.registerHandler('reservarEstoque', (ctx) => {
@@ -106,12 +231,12 @@ engine.registerHandler('reservarEstoque', (ctx) => {
 });
 ```
 
-Lancar `BpmnError` dispara um evento de borda de erro (error boundary event)
-correspondente, se existir. Erros comuns falham a execucao.
+Lançar `BpmnError` dispara um evento de borda de erro (error boundary event)
+correspondente, se existir. Erros comuns falham a execução.
 
-## Visualizacao interativa
+## Visualização interativa
 
-No navegador, combine o motor com o viewer para acompanhar a execucao:
+No navegador, combine o motor com o viewer para acompanhar a execução:
 
 ```ts
 import { WorkflowEngine } from '@bpmn-flow/core';
@@ -122,16 +247,66 @@ const viewer = new BpmnFlowViewer({ container: 'diagram' });
 viewer.load(xml);
 
 const engine = new WorkflowEngine(process, { mode: 'automation' });
-viewer.bindEngine(engine); // anima a execucao ao vivo
+viewer.bindEngine(engine); // anima a execução ao vivo
 viewer.applySnapshot(await engine.start()); // aplica o estado autoritativo
 ```
 
-Estilos aplicados: nos concluidos, tokens ativos, atividades em espera e fluxos
+Estilos aplicados: nós concluídos, tokens ativos, atividades em espera e fluxos
 percorridos.
+
+Um gateway paralelo divide o fluxo em vários tokens simultâneos, e a junção só
+libera quando todos chegam:
+
+![Três tokens simultâneos após um gateway paralelo](docs/media/tokens-paralelos.png)
+
+## Playground
+
+Aplicação de demonstração com dois modos: executar e editar.
+
+```bash
+npm install
+npm run build
+npm run dev          # http://localhost:5173
+```
+
+No modo **executar**, escolha um diagrama de `bpmn-files/`, informe variáveis em
+JSON e use `Iniciar` (pausa em cada tarefa de usuário) ou `Executar tudo`
+(resolve as esperas automaticamente). O processo de compras reage às variáveis:
+
+| Variáveis                              | Caminho                                               |
+| -------------------------------------- | ----------------------------------------------------- |
+| `{ "valor": 500, "aprovado": true }`   | Pula a aprovação gerencial → **Compra Realizada**     |
+| `{ "valor": 2500, "aprovado": true }`  | Passa pela aprovação gerencial → **Compra Realizada** |
+| `{ "valor": 2500, "aprovado": false }` | Passa pela aprovação gerencial → **Compra Rejeitada** |
+
+### Demo pública
+
+O workflow [`Demo`](.github/workflows/pages.yml) publica o playground no GitHub
+Pages a cada push na `master` — o build é estático (os exemplos vão embutidos e
+a execução roda no navegador), só o botão "Salvar no repositório" precisa do
+servidor. Para ligar: **Settings → Pages → Source: GitHub Actions**. A partir
+daí o endereço é `https://<usuário>.github.io/<repo>/`.
+
+No modo **editar**, o diagrama é criado com `bpmn-js`, validado pelo
+`@bpmn-flow/core` e pode ser salvo no diretório de exemplos do servidor:
+
+![Editor com o resultado da validação estrutural](docs/media/editor-validacao.png)
+
+## Linha de comando
+
+```bash
+bpmn-flow validate processo.bpmn   # sai 1 se o diagrama for inválido
+bpmn-flow inspect  processo.bpmn   # nós por tipo, raias, multi-instância, timers
+bpmn-flow run      processo.bpmn --vars '{"valor":2500}'
+```
+
+`run` aceita `--mode auto`, `--save estado.json` e `--state estado.json`, então
+dá para pausar uma execução e retomá-la depois. Detalhes em
+[`packages/cli`](packages/cli/README.md).
 
 ## Servidor HTTP e API REST
 
-O `@bpmn-flow/server` expoe a execucao por HTTP e pode servir a interface numa
+O `@bpmn-flow/server` expõe a execução por HTTP e pode servir a interface numa
 porta.
 
 ```bash
@@ -139,55 +314,99 @@ npm run build
 node packages/server/dist/bin.js --static apps/playground/dist --samples bpmn-files --port 3000
 ```
 
-Acesse `http://localhost:3000`. Variaveis de ambiente equivalentes: `PORT`,
+Acesse `http://localhost:3000`. Variáveis de ambiente equivalentes: `PORT`,
 `STATIC_DIR`, `SAMPLES_DIR`.
 
 Endpoints principais:
 
-| Metodo e rota                     | Descricao                                        |
+| Método e rota                     | Descrição                                        |
 | --------------------------------- | ------------------------------------------------ |
 | `POST /api/parse`                 | Recebe `{ xml }` e retorna o modelo normalizado. |
-| `POST /api/sessions`              | Cria uma sessao de execucao e a inicia.          |
-| `GET /api/sessions/:id`           | Retorna o snapshot atual da sessao.              |
-| `POST /api/sessions/:id/complete` | Conclui uma tarefa de usuario (`{ tokenId }`).   |
+| `POST /api/validate`              | Valida a estrutura do diagrama.                  |
+| `POST /api/sessions`              | Cria uma sessão de execução e a inicia.          |
+| `GET /api/sessions/:id`           | Retorna o snapshot atual da sessão.              |
+| `POST /api/sessions/:id/complete` | Conclui uma tarefa de usuário (`{ tokenId }`).   |
 | `POST /api/sessions/:id/signal`   | Entrega um sinal/evento (`{ name }`).            |
-| `GET /api/samples`                | Lista os arquivos `.bpmn` disponiveis.           |
+| `GET /api/samples`                | Lista os arquivos `.bpmn` disponíveis.           |
 
-## Padroes BPMN suportados
+Com `--data <dir>` cada sessão é gravada em disco e reconstruída sob demanda, de
+modo que reiniciar o servidor não perde execuções em andamento.
 
-- Eventos: inicio, fim (none, terminate, error), intermediarios de lancamento e
-  de captura, e eventos de borda (interrompentes e nao interrompentes).
-- Definicoes de evento: message, timer, error, signal, escalation.
+## Padrões BPMN suportados
+
+- Eventos: início, fim (none, terminate, error), intermediários de lançamento e
+  de captura, eventos de borda (interrompentes e não interrompentes), eventos de
+  link pareados e **event subprocess** (interrompente ou não).
+- Sinais são **difundidos**: um `signal()` acorda todos os assinantes.
+- Definições de evento: message, timer, error, signal, escalation.
 - Atividades: task, userTask, serviceTask, scriptTask, businessRuleTask,
   sendTask, receiveTask, manualTask, callActivity e subprocessos embutidos.
-- Gateways: exclusivo (com fluxo default), paralelo (juncao sincronizada),
-  inclusivo (juncao por alcancabilidade), baseado em evento e complexo.
-- Fluxos de sequencia com condicoes e colaboracao (pools e message flows).
+- Gateways: exclusivo (com fluxo default), paralelo (junção sincronizada),
+  inclusivo (junção por alcançabilidade), baseado em evento e complexo.
+- Repetição: multi-instância paralela e sequencial (por coleção ou cardinalidade,
+  com condição de conclusão e coleção de saída) e loop padrão.
+- Fluxos de sequência com condições, colaboração (pools e message flows) e
+  raias (lanes) com os papéis de `potentialOwner`.
+
+## Limitações conhecidas
+
+- **Ciclos de timer disparam uma vez**: `R3/PT10M` é lido como um intervalo de
+  10 minutos, sem repetição.
+- **Transações não têm rollback**: `transaction` executa como subprocesso
+  comum; compensação não é executada.
+- **Expressões de condição são avaliadas como JavaScript** sobre as variáveis do
+  processo, assumindo que a definição do diagrama é confiável. Uma expressão que
+  falha é tratada como `false` (fail-closed).
+- **Compensação** é reconhecida pelo parser, mas não tem semântica de execução;
+  o gateway complexo se comporta como inclusivo.
+- **Um evento carrega uma definição só**: eventos com várias definições usam a
+  primeira.
+- **Call activity não executa o processo chamado**: `calledElement` é lido para
+  o modelo, mas a atividade se comporta como uma tarefa comum (pass-through, ou
+  o que um handler registrado fizer).
+- **Sinal não é broadcast**: `signal()` entrega ao primeiro evento de captura
+  correspondente, enquanto a especificação difunde para todos.
 
 ## Desenvolvimento
 
 ```bash
 npm run build       # compila todos os pacotes
-npm test            # executa a suite Vitest
+npm test            # executa a suíte Vitest
 npm run typecheck   # checagem de tipos em todo o monorepo
 npm run lint        # ESLint
 npm run format      # Prettier
 npm run dev         # sobe o playground em modo de desenvolvimento
 ```
 
-## Estrutura do repositorio
+O CI roda `build`, `format:check`, `lint`, `typecheck` e `test` no Node 20 e 22
+(o build vem primeiro porque os pacotes se checam pelos tipos gerados).
+
+### Publicando
+
+Os quatro pacotes publicáveis já declaram `publishConfig`, `repository` e
+`files`:
+
+```bash
+npm run build
+npm run release:dry     # confere o conteúdo do tarball de cada pacote
+npm publish --workspaces --access public
+```
+
+## Estrutura do repositório
 
 ```
 packages/
-  core/        modelo, parser e motor de execucao
-  viewer/      renderizacao interativa com overlays
-  server/      API REST e host estatico
+  core/        modelo, parser e motor de execução
+  viewer/      renderização interativa com overlays
+  server/      API REST e host estático
+  cli/         linha de comando
 apps/
-  playground/  aplicacao interativa (Vite)
+  playground/  aplicação interativa (Vite)
+examples/      scripts executáveis de uso da biblioteca
 bpmn-files/    diagramas .bpmn de exemplo
-docs/          documentacao complementar
+docs/          documentação complementar
 ```
 
-## Licenca
+## Licença
 
 MIT. Veja [LICENSE](LICENSE).
