@@ -3,7 +3,7 @@ import { extname, join, normalize } from 'node:path';
 import { parseBpmn, validateBpmn, type TaskFilter, type WaitReason } from '@bpmn-flow/core';
 import { Hono } from 'hono';
 import { SampleProvider } from './samples.js';
-import { SessionStore, type CreateSessionInput } from './sessions.js';
+import { SessionStore, type CreateSessionInput, type SessionStoreOptions } from './sessions.js';
 import { FileSessionStorage } from './storage.js';
 
 export interface AppOptions {
@@ -16,8 +16,21 @@ export interface AppOptions {
    * Without it sessions live in memory only and are lost on restart.
    */
   dataDir?: string;
-  /** Session registry to use. Built from `dataDir` when omitted. */
+  /** Session registry to use. Built from `dataDir` and `handlers` when omitted. */
   sessions?: SessionStore;
+  /**
+   * Automation for every session: task handlers by node id, element kind or
+   * `*`. Without them, automatic activities pass through.
+   */
+  handlers?: SessionStoreOptions['handlers'];
+}
+
+/** Storage and automation for the default session store. */
+export function storeOptionsFrom(options: AppOptions): SessionStoreOptions {
+  return {
+    ...(options.dataDir ? { storage: new FileSessionStorage(options.dataDir) } : {}),
+    ...(options.handlers ? { handlers: options.handlers } : {}),
+  };
 }
 
 /** Builds a task filter from `?role=&reason=&nodeId=`. */
@@ -47,9 +60,7 @@ const MIME: Record<string, string> = {
  */
 export function createApp(options: AppOptions = {}): Hono {
   const app = new Hono();
-  const sessions =
-    options.sessions ??
-    new SessionStore(options.dataDir ? new FileSessionStorage(options.dataDir) : undefined);
+  const sessions = options.sessions ?? new SessionStore(storeOptionsFrom(options));
   const samples = options.samplesDir ? new SampleProvider(options.samplesDir) : undefined;
 
   app.get('/api/health', (c) => c.json({ status: 'ok' }));

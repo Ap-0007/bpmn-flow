@@ -59,11 +59,26 @@ Variáveis de ambiente equivalentes: `PORT`, `STATIC_DIR`, `SAMPLES_DIR`,
 | `GET /api/samples/:name`                            | -                            | Retorna o XML de um exemplo.          |
 | `POST /api/samples`                                 | `{ name, xml }`              | Valida e salva um `.bpmn` no dir.     |
 
-## Incidentes
+## Automação e incidentes
+
+O servidor registra em cada execução os handlers que você passar — é assim que
+uma `serviceTask` faz trabalho de verdade por HTTP:
+
+```ts
+startServer({
+  port: 3000,
+  dataDir: './data',
+  handlers: {
+    CobrarCartao: async (ctx) => ({ pago: await cobrar(ctx.get('valor')) }),
+    '*': (ctx) => console.log('executou', ctx.node.id),
+  },
+});
+```
 
 `POST /api/sessions` aceita `onHandlerError: "incident"` e `retry`, de modo que
 uma integração instável não derruba o processo: a atividade fica retida e
 aparece em `GET /api/sessions/:id/incidents`, pronta para `retry` ou `resolve`.
+Os handlers são registrados de novo quando uma sessão é reconstruída do disco.
 
 ## Caixa de entrada
 

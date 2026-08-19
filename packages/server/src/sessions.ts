@@ -10,6 +10,7 @@ import {
   type PendingTask,
   type ProcessModel,
   type TaskFilter,
+  type TaskHandler,
 } from '@bpmn-flow/core';
 import type { SessionStorage } from './storage.js';
 
@@ -47,6 +48,17 @@ interface LiveSession extends Session {
   engine: WorkflowEngine;
 }
 
+export interface SessionStoreOptions {
+  /** Where sessions are persisted. In-memory only when omitted. */
+  storage?: SessionStorage;
+  /**
+   * Automation registered on every engine this store creates or restores,
+   * keyed by node id, element kind or the `*` wildcard. Without it, automatic
+   * activities simply pass through.
+   */
+  handlers?: Record<string, TaskHandler>;
+}
+
 /**
  * Registry of running executions. Each session owns a {@link WorkflowEngine}
  * that can be driven over HTTP (complete a user task or deliver a signal).
@@ -58,18 +70,33 @@ interface LiveSession extends Session {
  */
 export class SessionStore {
   private readonly cache = new Map<string, LiveSession>();
+  private readonly storage: SessionStorage | undefined;
+  private readonly handlers: Record<string, TaskHandler>;
 
-  constructor(private readonly storage?: SessionStorage) {}
+  constructor(options: SessionStoreOptions = {}) {
+    this.storage = options.storage;
+    this.handlers = options.handlers ?? {};
+  }
+
+  /** Applies the store's automation to a freshly built engine. */
+  private wire(engine: WorkflowEngine): WorkflowEngine {
+    for (const [selector, handler] of Object.entries(this.handlers)) {
+      engine.registerHandler(selector, handler);
+    }
+    return engine;
+  }
 
   async create(input: CreateSessionInput): Promise<Session> {
     const { process, processes } = await readProcesses(input.xml);
-    const engine = new WorkflowEngine(process, {
-      processes,
-      ...(input.mode ? { mode: input.mode } : {}),
-      ...(input.variables ? { variables: input.variables } : {}),
-      ...(input.onHandlerError ? { onHandlerError: input.onHandlerError } : {}),
-      ...(input.retry ? { retry: input.retry } : {}),
-    });
+    const engine = this.wire(
+      new WorkflowEngine(process, {
+        processes,
+        ...(input.mode ? { mode: input.mode } : {}),
+        ...(input.variables ? { variables: input.variables } : {}),
+        ...(input.onHandlerError ? { onHandlerError: input.onHandlerError } : {}),
+        ...(input.retry ? { retry: input.retry } : {}),
+      }),
+    );
     const snapshot = await engine.start();
     const session: LiveSession = { id: randomUUID(), xml: input.xml, snapshot, engine };
     this.cache.set(session.id, session);
@@ -216,7 +243,7 @@ export class SessionStore {
     const record = await this.storage?.read(id);
     if (!record) return undefined;
     const { process, processes } = await readProcesses(record.xml);
-    const engine = WorkflowEngine.restore(process, record.state, { processes });
+    const engine = this.wire(WorkflowEngine.restore(process, record.state, { processes }));
     const session: LiveSession = {
       id: record.id,
       xml: record.xml,
