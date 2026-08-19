@@ -552,3 +552,65 @@ export const TERMINATE_WITH_MI = wrap(`
     <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="Trabalhar" />
     <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="Stop" />
     <bpmn:sequenceFlow id="fa2" sourceRef="Trabalhar" targetRef="End" />`);
+
+export const CONDITIONAL_CATCH = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="Depositar" />
+    <bpmn:intermediateCatchEvent id="SaldoOk">
+      <bpmn:conditionalEventDefinition>
+        <bpmn:condition xsi:type="bpmn:tFormalExpression">saldo &gt;= 100</bpmn:condition>
+      </bpmn:conditionalEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="Liberar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndDep" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="Depositar" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="SaldoOk" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="Depositar" targetRef="EndDep" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="SaldoOk" targetRef="Liberar" />
+    <bpmn:sequenceFlow id="fb3" sourceRef="Liberar" targetRef="End" />`);
+
+export const COMPLEX_GATEWAY = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="VotoA" />
+    <bpmn:userTask id="VotoB" />
+    <bpmn:userTask id="VotoC" />
+    <bpmn:complexGateway id="Quorum">
+      <bpmn:activationCondition xsi:type="bpmn:tFormalExpression">arrived &gt;= 2</bpmn:activationCondition>
+    </bpmn:complexGateway>
+    <bpmn:task id="Decidir" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="VotoA" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="VotoB" />
+    <bpmn:sequenceFlow id="fc" sourceRef="Split" targetRef="VotoC" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="VotoA" targetRef="Quorum" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="VotoB" targetRef="Quorum" />
+    <bpmn:sequenceFlow id="fc2" sourceRef="VotoC" targetRef="Quorum" />
+    <bpmn:sequenceFlow id="fq" sourceRef="Quorum" targetRef="Decidir" />
+    <bpmn:sequenceFlow id="fd" sourceRef="Decidir" targetRef="End" />`);
+
+export const MULTI_EVENT_DEFINITIONS = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:message id="Msg" name="RespostaCliente" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Aguardar" />
+    <bpmn:boundaryEvent id="MsgOuPrazo" attachedToRef="Aguardar">
+      <bpmn:messageEventDefinition messageRef="Msg" />
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT30M</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Seguir" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndAlt" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Aguardar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Aguardar" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="MsgOuPrazo" targetRef="Seguir" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Seguir" targetRef="EndAlt" />
+  </bpmn:process>
+</bpmn:definitions>`;

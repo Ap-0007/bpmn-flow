@@ -47,12 +47,9 @@ function toEventDefinitionKind($type: string): EventDefinitionKind {
   return camel as EventDefinitionKind;
 }
 
-function readEventDetail(defs: MdEventDefinition[] | undefined): EventDetail | undefined {
-  if (!defs || defs.length === 0) return { kind: 'none' };
-  const def = defs[0];
-  if (!def) return { kind: 'none' };
-  const kind = toEventDefinitionKind(def.$type);
-  const detail: EventDetail = { kind };
+/** One `bpmn:*EventDefinition` turned into a normalized detail. */
+function readEventDetail(def: MdEventDefinition): EventDetail {
+  const detail: EventDetail = { kind: toEventDefinitionKind(def.$type) };
   const timer = def.timeDuration?.body ?? def.timeDate?.body ?? def.timeCycle?.body;
   if (timer) detail.timer = timer;
   const reference =
@@ -65,7 +62,15 @@ function readEventDetail(defs: MdEventDefinition[] | undefined): EventDetail | u
   if (reference) detail.reference = reference;
   const code = def.errorRef?.errorCode ?? def.escalationRef?.escalationCode;
   if (code) detail.code = code;
+  if (def.condition?.body) detail.condition = def.condition.body;
+  if (def.activityRef?.id) detail.activityRef = def.activityRef.id;
   return detail;
+}
+
+/** Every definition of an event; `none` when it declares none. */
+function readEventDetails(defs: MdEventDefinition[] | undefined): EventDetail[] {
+  if (!defs || defs.length === 0) return [{ kind: 'none' }];
+  return defs.map(readEventDetail);
 }
 
 /**
@@ -152,12 +157,17 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
 
     const node: FlowNode = { id: el.id, kind, incoming: [], outgoing: [] };
     if (el.name) node.name = el.name;
-    if (isEventKind(kind)) node.event = readEventDetail(el.eventDefinitions);
+    if (isEventKind(kind)) {
+      const details = readEventDetails(el.eventDefinitions);
+      node.event = details[0];
+      node.events = details;
+    }
     if (kind === 'boundaryEvent') {
       if (el.attachedToRef?.id) node.attachedToRef = el.attachedToRef.id;
       node.cancelActivity = el.cancelActivity !== false;
     }
     if (el.default?.id) node.default = el.default.id;
+    if (el.activationCondition?.body) node.activationCondition = el.activationCondition.body;
     if (el.calledElement) node.calledElement = el.calledElement;
     const loop = readLoopCharacteristics(el.loopCharacteristics);
     if (loop) node.loop = loop;

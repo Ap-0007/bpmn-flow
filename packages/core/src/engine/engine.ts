@@ -1,7 +1,14 @@
 import { BpmnExecutionError, BpmnValidationError } from '../errors.js';
 import { ProcessGraph } from '../model/graph.js';
 import { isActivityKind } from '../model/kinds.js';
-import type { FlowNode, LoopCharacteristics, ProcessModel, SequenceFlow } from '../model/types.js';
+import type {
+  EventDetail,
+  FlowNode,
+  LoopCharacteristics,
+  ProcessModel,
+  SequenceFlow,
+} from '../model/types.js';
+import type { EventDefinitionKind } from '../model/kinds.js';
 import { Emitter } from './emitter.js';
 import { evaluateCondition, evaluateExpression } from './expression.js';
 import { BpmnError, HandlerRegistry, type TaskHandler } from './handlers.js';
@@ -603,8 +610,9 @@ export class WorkflowEngine {
   private armTimers(token: RuntimeToken): void {
     const node = token.scope.graph.node(token.nodeId);
     if (!node) return;
-    if (node.event?.kind === 'timer' && node.kind !== 'boundaryEvent') {
-      this.armTimer(token, node, 'catch', node.event.timer);
+    const timer = detailOfKind(node, 'timer');
+    if (timer && node.kind !== 'boundaryEvent') {
+      this.armTimer(token, node, 'catch', timer.timer);
     }
     // A boundary event belongs to the activity as a whole, so a multi-instance
     // activity arms it once (in startLoop), not once per instance.
@@ -614,8 +622,9 @@ export class WorkflowEngine {
   /** Arms timer boundary events attached to the activity the token sits on. */
   private armBoundaryTimers(token: RuntimeToken): void {
     for (const boundary of token.scope.graph.boundaryEvents(token.nodeId)) {
-      if (boundary.event?.kind !== 'timer') continue;
-      this.armTimer(token, boundary, 'boundary', boundary.event.timer);
+      const timer = detailOfKind(boundary, 'timer');
+      if (!timer) continue;
+      this.armTimer(token, boundary, 'boundary', timer.timer);
     }
   }
 
@@ -766,6 +775,8 @@ export class WorkflowEngine {
       }
       // No ready tokens: check inclusive joins that can now fire.
       if (this.fireReadyInclusiveJoins()) continue;
+      // A conditional event fires as soon as its condition holds.
+      if (this.fireReadyConditionalEvents()) continue;
       // Auto mode resolves the next wait to keep the simulation moving.
       if (this.mode === 'auto' && this.autoResolveWait()) continue;
       break;
@@ -823,8 +834,7 @@ export class WorkflowEngine {
         this.handleEventBased(token, node);
         return;
       case node.kind === 'complexGateway':
-        // Best-effort: behave like an inclusive gateway.
-        this.handleInclusive(token, node);
+        this.handleComplex(token, node);
         return;
       case node.kind === 'subProcess' ||
         node.kind === 'transaction' ||
@@ -1177,6 +1187,15 @@ export class WorkflowEngine {
     this.discard(token);
   }
 
+  /**
+   * Complex gateway. With an `activationCondition` the join fires when that
+   * expression turns true (the number of tokens that arrived is exposed as
+   * `arrived`); without one it behaves like an inclusive gateway.
+   */
+  private handleComplex(token: RuntimeToken, node: FlowNode): void {
+    this.handleInclusive(token, node);
+  }
+
   private handleEventBased(token: RuntimeToken, node: FlowNode): void {
     this.completeNode(token);
     const flows = token.scope.graph.outgoing(node);
@@ -1423,8 +1442,9 @@ export class WorkflowEngine {
   private raiseErrorOnActivity(scope: Scope, activityId: string, code?: string): boolean {
     for (const node of scope.graph.allNodes()) {
       if (node.kind !== 'boundaryEvent' || node.attachedToRef !== activityId) continue;
-      if (node.event?.kind !== 'error') continue;
-      if (code && node.event.code && node.event.code !== code) continue;
+      const error = detailOfKind(node, 'error');
+      if (!error) continue;
+      if (code && error.code && error.code !== code) continue;
       // Route from the boundary (activity token already discarded).
       const chosen = this.spawn(scope, node.id);
       this.completeNode(chosen);
@@ -1503,11 +1523,38 @@ export class WorkflowEngine {
       const first = buffer[0]!;
       const scope = first.scope;
       const node = scope.graph.requireNode(first.nodeId);
-      if (this.canAnyTokenReach(scope, node.id, buffer)) continue;
+      if (node.activationCondition) {
+        // Complex gateway: the diagram decides when enough tokens arrived.
+        const variables = { ...this.mergedVariables(scope), arrived: buffer.length };
+        if (!evaluateCondition(node.activationCondition, variables)) continue;
+      } else if (this.canAnyTokenReach(scope, node.id, buffer)) {
+        continue;
+      }
       this.inclusiveBuffers.delete(key);
       this.completeNode(first);
       // Merge all buffered tokens into a single continuation.
       this.inclusiveSplit(first, node);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Resumes a parked conditional catch event whose condition became true.
+   * Evaluated whenever the engine runs out of ready tokens, which is when the
+   * variables have settled.
+   */
+  private fireReadyConditionalEvents(): boolean {
+    for (const token of [...this.waiting.values()]) {
+      if (token.waiting !== 'catchEvent') continue;
+      const node = token.scope.graph.node(token.nodeId);
+      const condition = node ? detailOfKind(node, 'conditional')?.condition : undefined;
+      if (!condition) continue;
+      if (!evaluateCondition(condition, this.mergedVariables(token.scope))) continue;
+      this.waiting.delete(token.id);
+      token.waiting = undefined;
+      this.completeNode(token);
+      this.leaveViaOutgoing(token);
       return true;
     }
     return false;
@@ -1642,9 +1689,19 @@ function matchesFilter(task: PendingTask, filter: TaskFilter): boolean {
   return true;
 }
 
-/** A trigger matches a node by its id or by the referenced event name. */
+/** Every event definition declared on a node (one `none` when it declares none). */
+function detailsOf(node: FlowNode): EventDetail[] {
+  return node.events ?? (node.event ? [node.event] : []);
+}
+
+/** A trigger matches a node by its id or by any referenced event name. */
 function matchesTrigger(node: FlowNode, nameOrId: string): boolean {
-  return node.id === nameOrId || node.event?.reference === nameOrId;
+  return node.id === nameOrId || detailsOf(node).some((detail) => detail.reference === nameOrId);
+}
+
+/** First definition of a given kind, when the node declares one. */
+function detailOfKind(node: FlowNode, kind: EventDefinitionKind): EventDetail | undefined {
+  return detailsOf(node).find((detail) => detail.kind === kind);
 }
 
 /** Timers are unique per (token, timer node) pair. */

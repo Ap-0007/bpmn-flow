@@ -33,6 +33,10 @@ export interface EventDetail {
   timer?: string;
   /** Error/escalation code, when applicable. */
   code?: string;
+  /** Conditional events: expression that fires the event once true. */
+  condition?: string;
+  /** Compensation throw events: the activity to compensate, if narrowed. */
+  activityRef?: string;
 }
 
 /**
@@ -74,8 +78,13 @@ export interface FlowNode {
   incoming: string[];
   outgoing: string[];
 
-  /** Present on events; describes the trigger. Defaults to `none`. */
+  /**
+   * Present on events; describes the trigger. Defaults to `none`. When an event
+   * declares several definitions this is the first one — see {@link events}.
+   */
   event?: EventDetail;
+  /** Every event definition declared on the event, in document order. */
+  events?: EventDetail[];
 
   /** Boundary events: id of the activity they are attached to. */
   attachedToRef?: string;
@@ -84,6 +93,8 @@ export interface FlowNode {
 
   /** Gateways / activities: id of the default outgoing sequence flow. */
   default?: string;
+  /** Complex gateway: expression deciding when the join fires. */
+  activationCondition?: string;
 
   /** Sub-processes: id of a called global process (call activity). */
   calledElement?: string;
