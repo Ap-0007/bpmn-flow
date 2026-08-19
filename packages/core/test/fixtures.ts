@@ -499,3 +499,56 @@ export const EVENT_SUBPROCESS_ERROR = `<?xml version="1.0" encoding="UTF-8"?>
     </bpmn:subProcess>
   </bpmn:process>
 </bpmn:definitions>`;
+
+export const MI_WITH_BOUNDARY = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="Cancelar" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:dataObject id="itens" name="itens" />
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Aprovar">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="item" name="item" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:boundaryEvent id="OnCancel" attachedToRef="Aprovar">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="OnDeadline" attachedToRef="Aprovar">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT1H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Abortar" />
+    <bpmn:task id="Escalar" />
+    <bpmn:endEvent id="EndAbort" />
+    <bpmn:endEvent id="EndEscalate" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Aprovar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Aprovar" targetRef="End" />
+    <bpmn:sequenceFlow id="fc" sourceRef="OnCancel" targetRef="Abortar" />
+    <bpmn:sequenceFlow id="fc2" sourceRef="Abortar" targetRef="EndAbort" />
+    <bpmn:sequenceFlow id="fd" sourceRef="OnDeadline" targetRef="Escalar" />
+    <bpmn:sequenceFlow id="fd2" sourceRef="Escalar" targetRef="EndEscalate" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const TERMINATE_WITH_MI = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="itens" name="itens" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="Trabalhar">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="item" name="item" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="Stop">
+      <bpmn:terminateEventDefinition />
+    </bpmn:endEvent>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="Trabalhar" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="Stop" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="Trabalhar" targetRef="End" />`);

@@ -565,6 +565,10 @@ export class WorkflowEngine {
     token.scope.tokens.delete(token);
     this.waiting.delete(token.id);
     this.clearTimersFor(token.id);
+    // A discarded token must never be processed again, even if it was already
+    // queued — cancellation (terminate, interrupting boundary) relies on this.
+    const queued = this.ready.indexOf(token);
+    if (queued >= 0) this.ready.splice(queued, 1);
   }
 
   /** Moves a token from a link throw event to the matching link catch event. */
@@ -602,7 +606,9 @@ export class WorkflowEngine {
     if (node.event?.kind === 'timer' && node.kind !== 'boundaryEvent') {
       this.armTimer(token, node, 'catch', node.event.timer);
     }
-    this.armBoundaryTimers(token);
+    // A boundary event belongs to the activity as a whole, so a multi-instance
+    // activity arms it once (in startLoop), not once per instance.
+    if (!token.loopInstanceOf) this.armBoundaryTimers(token);
   }
 
   /** Arms timer boundary events attached to the activity the token sits on. */
@@ -1098,6 +1104,25 @@ export class WorkflowEngine {
     this.leaveViaOutgoing(parent);
   }
 
+  /** Discards every instance of a repeated activity and forgets the run. */
+  private cancelLoop(run: LoopRun): void {
+    this.loops.delete(run.id);
+    for (const scope of [...run.instanceScopes]) {
+      for (const token of [...scope.tokens]) this.discard(token);
+      this.removeScope(scope);
+    }
+    run.instanceScopes.clear();
+  }
+
+  /** Cancels every repeated activity living in the given scope. */
+  private cancelLoopsOf(scope: Scope): void {
+    for (const run of [...this.loops.values()]) {
+      if (run.scope !== scope) continue;
+      this.cancelLoop(run);
+      this.discard(run.parentToken);
+    }
+  }
+
   private removeScope(scope: Scope): void {
     const index = this.scopes.indexOf(scope);
     if (index >= 0) this.scopes.splice(index, 1);
@@ -1427,10 +1452,25 @@ export class WorkflowEngine {
   private fireBoundary(scope: Scope, boundary: FlowNode): boolean {
     const hostId = boundary.attachedToRef!;
     const interrupting = boundary.cancelActivity !== false;
+
+    // Host is a repeated activity: the event applies to every instance at once.
+    const run = [...this.loops.values()].find(
+      (candidate) => candidate.nodeId === hostId && candidate.scope === scope,
+    );
+    if (run) {
+      if (interrupting) {
+        this.cancelLoop(run);
+        this.discard(run.parentToken);
+      }
+      this.emitBoundary(scope, boundary);
+      return true;
+    }
+
     // Find the host token: a waiting task token, or a suspended subprocess parent.
     const childScope = this.scopes.find((s) => s.hostNodeId === hostId && s.parentToken);
     if (childScope) {
       if (interrupting) {
+        this.cancelLoopsOf(childScope);
         for (const t of [...childScope.tokens]) this.discard(t);
         this.scopes.splice(this.scopes.indexOf(childScope), 1);
         const parent = childScope.parentToken!;
@@ -1519,6 +1559,8 @@ export class WorkflowEngine {
   }
 
   private terminateScope(scope: Scope): void {
+    // Repeated activities keep their tokens outside the scope: cancel them too.
+    this.cancelLoopsOf(scope);
     for (const token of [...scope.tokens]) this.discard(token);
     if (scope.parentToken) {
       this.finishSubProcess(scope);
