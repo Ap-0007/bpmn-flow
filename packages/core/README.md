@@ -22,6 +22,14 @@ fluxos de sequência com condições e colaboração. A interchange de diagrama 
 
 Lança `BpmnParseError` para XML inválido ou sem processo.
 
+### `addFlowReferences(xml): Promise<string>`
+
+Devolve o mesmo XML com o `<bpmn:incoming>`/`<bpmn:outgoing>` de cada nó
+preenchido a partir dos `sourceRef`/`targetRef` dos fluxos. O motor não precisa
+disso (deriva tudo dos fluxos), mas ferramentas do ecossistema leem só esses
+elementos — o `bpmn-auto-layout`, por exemplo, não desenha nenhuma aresta quando
+eles faltam. Idempotente.
+
 ### `validateBpmn(xml): Promise<ValidationResult>`
 
 Valida a estrutura do diagrama (processo sem evento de início ou de fim, nós

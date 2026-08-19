@@ -1,23 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="Definitions_Viagem" targetNamespace="http://bpmn-flow">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Viagem" targetNamespace="http://bpmn-flow">
   <bpmn:process id="Process_Viagem" name="Reserva de Viagem" isExecutable="true">
-    <bpmn:startEvent id="ViagemSolicitada" name="Viagem Solicitada" />
-    <bpmn:serviceTask id="ReservarVoo" name="Reservar Voo" />
+    <bpmn:startEvent id="ViagemSolicitada" name="Viagem Solicitada">
+      <bpmn:outgoing>f0</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="ReservarVoo" name="Reservar Voo">
+      <bpmn:incoming>f0</bpmn:incoming>
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:serviceTask>
     <bpmn:boundaryEvent id="CompVoo" attachedToRef="ReservarVoo">
       <bpmn:compensateEventDefinition />
     </bpmn:boundaryEvent>
     <bpmn:serviceTask id="CancelarVoo" name="Cancelar Voo" isForCompensation="true" />
-    <bpmn:serviceTask id="ReservarHotel" name="Reservar Hotel" />
+    <bpmn:serviceTask id="ReservarHotel" name="Reservar Hotel">
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
     <bpmn:boundaryEvent id="CompHotel" attachedToRef="ReservarHotel">
       <bpmn:compensateEventDefinition />
     </bpmn:boundaryEvent>
     <bpmn:serviceTask id="CancelarHotel" name="Cancelar Hotel" isForCompensation="true" />
-    <bpmn:exclusiveGateway id="PagamentoOk" name="Pagamento aprovado?" default="fFalhou" />
-    <bpmn:endEvent id="ViagemConfirmada" name="Viagem Confirmada" />
+    <bpmn:exclusiveGateway id="PagamentoOk" name="Pagamento aprovado?" default="fFalhou">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>fOk</bpmn:outgoing>
+      <bpmn:outgoing>fFalhou</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="ViagemConfirmada" name="Viagem Confirmada">
+      <bpmn:incoming>fOk</bpmn:incoming>
+    </bpmn:endEvent>
     <bpmn:intermediateThrowEvent id="DesfazerReservas" name="Desfazer Reservas">
+      <bpmn:incoming>fFalhou</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
       <bpmn:compensateEventDefinition />
     </bpmn:intermediateThrowEvent>
-    <bpmn:endEvent id="ViagemCancelada" name="Viagem Cancelada" />
+    <bpmn:endEvent id="ViagemCancelada" name="Viagem Cancelada">
+      <bpmn:incoming>f3</bpmn:incoming>
+    </bpmn:endEvent>
     <bpmn:sequenceFlow id="f0" sourceRef="ViagemSolicitada" targetRef="ReservarVoo" />
     <bpmn:sequenceFlow id="f1" sourceRef="ReservarVoo" targetRef="ReservarHotel" />
     <bpmn:sequenceFlow id="f2" sourceRef="ReservarHotel" targetRef="PagamentoOk" />
@@ -35,35 +53,60 @@
         <dc:Bounds x="57" y="52" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ReservarVoo_di" bpmnElement="ReservarVoo">
-        <dc:Bounds x="25" y="170" width="100" height="80" />
+        <dc:Bounds x="175" y="30" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="CompVoo_di" bpmnElement="CompVoo">
-        <dc:Bounds x="57" y="232" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="CancelarVoo_di" bpmnElement="CancelarVoo">
-        <dc:Bounds x="25" y="310" width="100" height="80" />
+        <dc:Bounds x="207" y="92" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ReservarHotel_di" bpmnElement="ReservarHotel">
-        <dc:Bounds x="25" y="450" width="100" height="80" />
+        <dc:Bounds x="325" y="30" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="CompHotel_di" bpmnElement="CompHotel">
-        <dc:Bounds x="57" y="512" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="CancelarHotel_di" bpmnElement="CancelarHotel">
-        <dc:Bounds x="25" y="590" width="100" height="80" />
+        <dc:Bounds x="357" y="92" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="PagamentoOk_di" bpmnElement="PagamentoOk" isMarkerVisible="true">
-        <dc:Bounds x="50" y="745" width="50" height="50" />
+        <dc:Bounds x="500" y="45" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ViagemConfirmada_di" bpmnElement="ViagemConfirmada">
-        <dc:Bounds x="57" y="892" width="36" height="36" />
+        <dc:Bounds x="657" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CancelarVoo_di" bpmnElement="CancelarVoo">
+        <dc:Bounds x="25" y="170" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="DesfazerReservas_di" bpmnElement="DesfazerReservas">
-        <dc:Bounds x="57" y="1032" width="36" height="36" />
+        <dc:Bounds x="657" y="192" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ViagemCancelada_di" bpmnElement="ViagemCancelada">
-        <dc:Bounds x="57" y="1172" width="36" height="36" />
+        <dc:Bounds x="807" y="192" width="36" height="36" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="CancelarHotel_di" bpmnElement="CancelarHotel">
+        <dc:Bounds x="25" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f0_di" bpmnElement="f0">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="500" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="fOk_di" bpmnElement="fOk">
+        <di:waypoint x="550" y="70" />
+        <di:waypoint x="657" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="fFalhou_di" bpmnElement="fFalhou">
+        <di:waypoint x="525" y="95" />
+        <di:waypoint x="525" y="210" />
+        <di:waypoint x="657" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="693" y="210" />
+        <di:waypoint x="807" y="210" />
+      </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>

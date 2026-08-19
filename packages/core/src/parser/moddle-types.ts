@@ -64,6 +64,8 @@ export interface MdElement {
   $type: string;
   id?: string;
   name?: string;
+  /** Diagram interchange, when the file carries layout. */
+  diagrams?: unknown[];
 
   // bpmn:Definitions
   rootElements?: MdElement[];

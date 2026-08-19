@@ -38,6 +38,11 @@ derivado dos próprios fluxos de sequência, e não dos arrays opcionais do nó,
 tornando o parsing robusto a diagramas inconsistentes. Subprocessos são lidos
 recursivamente como escopos aninhados.
 
+O contrário também existe: `addFlowReferences` escreve de volta o
+`<bpmn:incoming>`/`<bpmn:outgoing>` de cada nó. É redundante para o motor, mas
+o resto do ecossistema lê só esses elementos — o `bpmn-auto-layout` posiciona as
+caixas e não desenha aresta nenhuma sem eles.
+
 ### Motor (`@bpmn-flow/core/engine`)
 
 Execução por tokens. Um token representa uma linha de controle posicionada em um

@@ -25,6 +25,10 @@ viewer.load(xml);
 
 - `load(xml)`: renderiza o diagrama e centraliza. Diagramas sem layout (sem DI)
   são posicionados automaticamente com `bpmn-auto-layout`.
+- `ensureLayout(xml)` / `hasDiagramInterchange(xml)`: o mesmo posicionamento,
+  disponível isolado para quem precisa de DI (o editor `bpmn-js`, por exemplo).
+  Antes de posicionar, explicita as referências de fluxo com
+  `addFlowReferences` — sem isso o layout desenha as caixas e **nenhuma seta**.
 - `fit()`: ajusta o diagrama ao viewport.
 - `applySnapshot(snapshot)`: aplica um `ExecutionSnapshot` como fonte de verdade
   (nós concluídos, tokens ativos e atividades em espera).

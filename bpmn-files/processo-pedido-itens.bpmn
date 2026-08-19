@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="Definitions_Pedido" targetNamespace="http://bpmn-flow">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_Pedido" targetNamespace="http://bpmn-flow">
   <bpmn:process id="Process_Pedido" name="Processo de Pedido" isExecutable="true">
     <bpmn:dataObject id="itens" name="itens" />
     <bpmn:dataObject id="separados" name="separados" />
-    <bpmn:startEvent id="PedidoRecebido" name="Pedido Recebido" />
+    <bpmn:startEvent id="PedidoRecebido" name="Pedido Recebido">
+      <bpmn:outgoing>f0</bpmn:outgoing>
+    </bpmn:startEvent>
     <bpmn:serviceTask id="SepararItem" name="Separar Item">
+      <bpmn:incoming>f0</bpmn:incoming>
+      <bpmn:outgoing>f1</bpmn:outgoing>
       <bpmn:multiInstanceLoopCharacteristics>
         <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
         <bpmn:loopDataOutputRef>separados</bpmn:loopDataOutputRef>
@@ -12,10 +16,23 @@
         <bpmn:outputDataItem id="separado" name="separado" />
       </bpmn:multiInstanceLoopCharacteristics>
     </bpmn:serviceTask>
-    <bpmn:exclusiveGateway id="PrecisaConferencia" name="Precisa conferência?" default="fDireto" />
-    <bpmn:userTask id="ConferirPedido" name="Conferir Pedido" />
-    <bpmn:serviceTask id="EmitirNota" name="Emitir Nota Fiscal" />
-    <bpmn:endEvent id="PedidoEnviado" name="Pedido Enviado" />
+    <bpmn:exclusiveGateway id="PrecisaConferencia" name="Precisa conferência?" default="fDireto">
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>fConferir</bpmn:outgoing>
+      <bpmn:outgoing>fDireto</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="ConferirPedido" name="Conferir Pedido">
+      <bpmn:incoming>fConferir</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="EmitirNota" name="Emitir Nota Fiscal">
+      <bpmn:incoming>fDireto</bpmn:incoming>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="PedidoEnviado" name="Pedido Enviado">
+      <bpmn:incoming>f3</bpmn:incoming>
+    </bpmn:endEvent>
     <bpmn:sequenceFlow id="f0" sourceRef="PedidoRecebido" targetRef="SepararItem" />
     <bpmn:sequenceFlow id="f1" sourceRef="SepararItem" targetRef="PrecisaConferencia" />
     <bpmn:sequenceFlow id="fConferir" name="Sim" sourceRef="PrecisaConferencia" targetRef="ConferirPedido">
@@ -37,20 +54,46 @@
         <dc:Bounds x="57" y="332" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="SepararItem_di" bpmnElement="SepararItem">
-        <dc:Bounds x="25" y="450" width="100" height="80" />
+        <dc:Bounds x="175" y="310" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="PrecisaConferencia_di" bpmnElement="PrecisaConferencia" isMarkerVisible="true">
-        <dc:Bounds x="50" y="605" width="50" height="50" />
+        <dc:Bounds x="350" y="325" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ConferirPedido_di" bpmnElement="ConferirPedido">
-        <dc:Bounds x="25" y="730" width="100" height="80" />
+        <dc:Bounds x="475" y="310" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="EmitirNota_di" bpmnElement="EmitirNota">
-        <dc:Bounds x="25" y="870" width="100" height="80" />
+        <dc:Bounds x="625" y="310" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="PedidoEnviado_di" bpmnElement="PedidoEnviado">
-        <dc:Bounds x="57" y="1032" width="36" height="36" />
+        <dc:Bounds x="807" y="332" width="36" height="36" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f0_di" bpmnElement="f0">
+        <di:waypoint x="93" y="350" />
+        <di:waypoint x="175" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="275" y="350" />
+        <di:waypoint x="350" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="fConferir_di" bpmnElement="fConferir">
+        <di:waypoint x="400" y="350" />
+        <di:waypoint x="475" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="fDireto_di" bpmnElement="fDireto">
+        <di:waypoint x="375" y="375" />
+        <di:waypoint x="375" y="420" />
+        <di:waypoint x="675" y="420" />
+        <di:waypoint x="675" y="390" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="575" y="350" />
+        <di:waypoint x="625" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="725" y="350" />
+        <di:waypoint x="807" y="350" />
+      </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>

@@ -2,6 +2,7 @@ export * from './model/kinds.js';
 export * from './model/types.js';
 export { ProcessGraph } from './model/graph.js';
 export { parseBpmn } from './parser/parse.js';
+export { addFlowReferences } from './parser/references.js';
 export { validateBpmn, validateModel } from './validate.js';
 export type { ValidationIssue, ValidationResult } from './validate.js';
 export { WorkflowEngine } from './engine/engine.js';
