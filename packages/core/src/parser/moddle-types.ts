@@ -14,6 +14,10 @@ export interface MdEventDefinition {
   $type: string;
   /** Link events carry the name on the definition itself. */
   name?: string;
+  /** Conditional events: the expression that makes them fire. */
+  condition?: { body?: string };
+  /** Compensation throw events may target one activity. */
+  activityRef?: MdRef;
   timeDuration?: { body?: string };
   timeDate?: { body?: string };
   timeCycle?: { body?: string };
@@ -82,6 +86,8 @@ export interface MdElement {
 
   // gateways / activities
   default?: MdRef;
+  /** Complex gateway: when the join is allowed to fire. */
+  activationCondition?: { body?: string };
 
   // call activity
   calledElement?: string;
@@ -91,9 +97,15 @@ export interface MdElement {
 
   // activities: who is expected to perform the work
   resources?: MdResourceRole[];
+  /** Receive/send tasks: the message they wait for or emit. */
+  messageRef?: MdRef & { name?: string };
 
   // process: swimlanes
   laneSets?: { lanes?: MdLane[] }[];
+  /** Artifacts of a process/subprocess: associations, text annotations. */
+  artifacts?: MdElement[];
+  /** Activity that only runs as a compensation handler. */
+  isForCompensation?: boolean;
 
   // sequence flow
   sourceRef?: MdRef;

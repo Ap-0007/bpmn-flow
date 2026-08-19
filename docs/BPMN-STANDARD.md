@@ -23,6 +23,9 @@ Um escopo termina quando não sobra nenhum token nele.
 | `endEvent` (none)                 | Consome o token; o escopo conclui quando não há mais tokens.                                        |
 | `endEvent` (terminate)            | Cancela **todos** os tokens do escopo imediatamente.                                                |
 | `endEvent` (error)                | Consome o token e levanta o erro no escopo pai, procurando um evento de borda correspondente.       |
+| `endEvent` (escalation)           | Propaga a escalation para fora; sem tratador, a execução segue normalmente.                         |
+| `endEvent` (cancel)               | Dentro de uma `transaction`: compensa o que foi feito e sai pelo evento de borda de cancelamento.   |
+| `endEvent` (compensation)         | Dispara os tratadores de compensação do escopo, em ordem inversa.                                   |
 | `intermediateThrowEvent`          | Pass-through: conclui e segue adiante.                                                              |
 | `intermediateCatchEvent`          | Estaciona o token (`waitReason: "catchEvent"`) até `signal()` ou até o timer vencer.                |
 | `boundaryEvent` interrompente     | Descarta o token da atividade hospedeira (ou o escopo do subprocesso) e segue pelo fluxo do evento. |
@@ -38,6 +41,27 @@ subprocesses.
 Eventos de link são pareados dentro do escopo: um `intermediateThrowEvent` de
 link salta para o `intermediateCatchEvent` de mesmo nome, em vez de seguir pelos
 fluxos de saída.
+
+### Compensação
+
+Um evento de borda de `compensation` marca a atividade como reversível; a
+`bpmn:association` que sai desse evento aponta para a atividade que desfaz o
+trabalho (normalmente com `isForCompensation="true"`). O motor guarda cada
+atividade compensável concluída e, quando um evento de compensação dispara,
+executa os tratadores na **ordem inversa** da conclusão — opcionalmente
+restrito a uma atividade via `activityRef`. A compensação termina antes de o
+token que a disparou seguir adiante.
+
+`transaction` + `cancelEventDefinition` combinam as duas coisas: cancelar
+compensa o que já foi feito, descarta o resto do trabalho da transação e sai
+pelo evento de borda de cancelamento.
+
+### Escalation
+
+Uma escalation lançada dentro de um subprocesso procura um evento de borda de
+escalation na atividade que hospeda o escopo, subindo a árvore, e depois um
+event subprocess de escalation. Diferente do erro, escalation sem tratador não
+é falha: o ramo continua.
 
 ### Event subprocess
 
@@ -60,9 +84,12 @@ a execução.
   sem correspondência, a execução falha.
 - `subProcess`, `transaction` e `adHocSubProcess` criam um escopo filho e
   suspendem o token pai até a conclusão do escopo.
-- `callActivity` **não instancia o processo chamado**: `calledElement` é lido
-  para o modelo, mas a execução trata o elemento como uma tarefa comum (ver
-  divergências).
+- `callActivity` executa o processo referenciado por `calledElement` quando ele
+  é passado ao motor (`options.processes`, normalmente `model.processes`); sem
+  isso, continua sendo pass-through.
+- Um erro técnico do handler (qualquer coisa que não seja `BpmnError`) pode ser
+  repetido (`options.retry`) e, com `onHandlerError: "incident"`, vira um
+  incidente que segura o token em vez de derrubar a execução.
 
 ## Repetição de atividades
 
@@ -157,7 +184,9 @@ vence, e as alternativas são canceladas.
 
 ### Complexo
 
-Sem semântica própria: comporta-se como inclusivo (ver divergências).
+Com `activationCondition`, a junção dispara quando a expressão fica verdadeira —
+o número de tokens que chegaram é exposto como `arrived`, o que dá quórum
+("2 de 3 aprovadores"). Sem a expressão, comporta-se como inclusivo.
 
 ## Fluxos de sequência
 
@@ -174,24 +203,28 @@ expressão que ainda assim lança, ou que não retorna `true`, é tratada como f
    intervalo, sem repetir. O motor também não tem relógio próprio: calcula o
    vencimento e o host chama `tick()` — o `@bpmn-flow/server` faz isso em
    intervalo configurável.
-2. **Gateway complexo tratado como inclusivo.** A especificação delega o
-   comportamento a uma expressão de ativação; a aproximação evita travar
-   diagramas que usam o símbolo sem definir a expressão.
+2. **Gateway complexo sem `activationCondition`** cai no comportamento
+   inclusivo, em vez de recusar o diagrama.
 3. **Modo `auto`.** Fora da especificação, existe para simular execuções:
    resolve automaticamente qualquer espera e, quando um gateway não tem default
    nem condição verdadeira, toma o primeiro fluxo de saída. O modo `automation`
    (padrão) segue a especificação.
-4. **Compensação** é reconhecida como definição de evento, mas não tem
-   semântica de execução.
-5. **Call activity não é instanciada.** O elemento é reconhecido e o
-   `calledElement` fica no modelo, mas nenhum escopo filho é criado; embutir o
-   processo chamado como subprocesso é a alternativa hoje.
-6. **Receive task só é retomada por `completeTask()`**, não por `signal()`.
-7. **Um evento carrega uma definição só.** Eventos com várias definições
-   (multiple / parallel multiple) usam a primeira que aparece no XML.
-8. **Transações não têm rollback.** `transaction` se comporta como subprocesso
-   comum e a compensação não é executada. (A execução em si é serializável:
-   `getState()`/`restore()` atravessam um restart.)
+4. **Evento de borda condicional não é reavaliado sozinho.** O de captura é
+   (a cada quiescência do motor); o de borda depende de `signal()` pelo id.
+5. **Mapeamento de dados não é executado.** `ioSpecification` e data
+   associations de entrada/saída são ignorados: o escopo filho lê as variáveis
+   do pai pela cadeia de escopos.
+6. **Correlação de mensagem por chave não existe.** A entrega é por nome da
+   mensagem/sinal ou pelo id do elemento.
+7. **DMN está fora de escopo.** `businessRuleTask` executa o handler que você
+   registrar, e é por ali que um motor de decisão entra.
+
+## Medição
+
+O histórico grava `enter` e `complete` com carimbo de tempo do relógio do motor
+(`options.now`) e uma sequência explícita. `metrics()` pareia os dois por nó e
+devolve tempo total, médio e máximo por atividade — uma atividade
+multi-instância reporta uma entrada por instância, e não uma para o conjunto.
 
 ## Layout e renderização
 

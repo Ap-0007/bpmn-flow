@@ -8,6 +8,7 @@ import {
   type FlowNode,
   type PendingTask,
   type ProcessModel,
+  type TaskHandler,
 } from '@bpmn-flow/core';
 
 /**
@@ -24,6 +25,12 @@ export interface RunOptions {
   mode?: EngineMode;
   /** Previously stored state to continue instead of starting fresh. */
   state?: EngineState;
+  /** Automation by node id, element kind or `*`. */
+  handlers?: Record<string, TaskHandler>;
+  /** What to do when a handler throws: stop, or hold an incident. */
+  onHandlerError?: 'fail' | 'incident';
+  /** Automatic retries before giving up on a handler. */
+  retry?: { attempts?: number; delay?: string };
 }
 
 export interface RunResult extends CommandResult {
@@ -96,11 +103,17 @@ export async function run(xml: string, options: RunOptions = {}): Promise<RunRes
   if (!process) throw new Error('No executable process found in the diagram.');
 
   const engine = options.state
-    ? WorkflowEngine.restore(process, options.state)
+    ? WorkflowEngine.restore(process, options.state, { processes: model.processes })
     : new WorkflowEngine(process, {
+        processes: model.processes,
         ...(options.mode ? { mode: options.mode } : {}),
         ...(options.variables ? { variables: options.variables } : {}),
+        ...(options.onHandlerError ? { onHandlerError: options.onHandlerError } : {}),
+        ...(options.retry ? { retry: options.retry } : {}),
       });
+  for (const [selector, handler] of Object.entries(options.handlers ?? {})) {
+    engine.registerHandler(selector, handler);
+  }
 
   const snapshot = options.state ? await engine.resume() : await engine.start();
   const lines = [
@@ -113,6 +126,15 @@ export async function run(xml: string, options: RunOptions = {}): Promise<RunRes
   if (tasks.length > 0) {
     lines.push('pending:');
     for (const task of tasks) lines.push(`  ${describeTask(task)}`);
+  }
+  const incidents = engine.incidentList();
+  if (incidents.length > 0) {
+    lines.push('incidents:');
+    for (const incident of incidents) {
+      lines.push(
+        `  [${incident.tokenId}] ${incident.nodeId}: ${incident.message} (attempt ${incident.attempts})`,
+      );
+    }
   }
   const timers = engine.dueTimers();
   if (timers.length > 0) {

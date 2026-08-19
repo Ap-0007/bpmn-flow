@@ -25,3 +25,6 @@ npm-debug.log*
 # Env
 .env
 .env.local
+
+# Guia local do agente: fica na maquina, fora do versionamento
+CLAUDE.md

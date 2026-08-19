@@ -499,3 +499,245 @@ export const EVENT_SUBPROCESS_ERROR = `<?xml version="1.0" encoding="UTF-8"?>
     </bpmn:subProcess>
   </bpmn:process>
 </bpmn:definitions>`;
+
+export const MI_WITH_BOUNDARY = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="Cancelar" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:dataObject id="itens" name="itens" />
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Aprovar">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="item" name="item" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:boundaryEvent id="OnCancel" attachedToRef="Aprovar">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="OnDeadline" attachedToRef="Aprovar">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT1H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Abortar" />
+    <bpmn:task id="Escalar" />
+    <bpmn:endEvent id="EndAbort" />
+    <bpmn:endEvent id="EndEscalate" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Aprovar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Aprovar" targetRef="End" />
+    <bpmn:sequenceFlow id="fc" sourceRef="OnCancel" targetRef="Abortar" />
+    <bpmn:sequenceFlow id="fc2" sourceRef="Abortar" targetRef="EndAbort" />
+    <bpmn:sequenceFlow id="fd" sourceRef="OnDeadline" targetRef="Escalar" />
+    <bpmn:sequenceFlow id="fd2" sourceRef="Escalar" targetRef="EndEscalate" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const TERMINATE_WITH_MI = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:dataObject id="itens" name="itens" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="Trabalhar">
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:loopDataInputRef>itens</bpmn:loopDataInputRef>
+        <bpmn:inputDataItem id="item" name="item" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="Stop">
+      <bpmn:terminateEventDefinition />
+    </bpmn:endEvent>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="Trabalhar" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="Stop" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="Trabalhar" targetRef="End" />`);
+
+export const CONDITIONAL_CATCH = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="Depositar" />
+    <bpmn:intermediateCatchEvent id="SaldoOk">
+      <bpmn:conditionalEventDefinition>
+        <bpmn:condition xsi:type="bpmn:tFormalExpression">saldo &gt;= 100</bpmn:condition>
+      </bpmn:conditionalEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="Liberar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndDep" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="Depositar" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="SaldoOk" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="Depositar" targetRef="EndDep" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="SaldoOk" targetRef="Liberar" />
+    <bpmn:sequenceFlow id="fb3" sourceRef="Liberar" targetRef="End" />`);
+
+export const COMPLEX_GATEWAY = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="VotoA" />
+    <bpmn:userTask id="VotoB" />
+    <bpmn:userTask id="VotoC" />
+    <bpmn:complexGateway id="Quorum">
+      <bpmn:activationCondition xsi:type="bpmn:tFormalExpression">arrived &gt;= 2</bpmn:activationCondition>
+    </bpmn:complexGateway>
+    <bpmn:task id="Decidir" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="VotoA" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="VotoB" />
+    <bpmn:sequenceFlow id="fc" sourceRef="Split" targetRef="VotoC" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="VotoA" targetRef="Quorum" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="VotoB" targetRef="Quorum" />
+    <bpmn:sequenceFlow id="fc2" sourceRef="VotoC" targetRef="Quorum" />
+    <bpmn:sequenceFlow id="fq" sourceRef="Quorum" targetRef="Decidir" />
+    <bpmn:sequenceFlow id="fd" sourceRef="Decidir" targetRef="End" />`);
+
+export const MULTI_EVENT_DEFINITIONS = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:message id="Msg" name="RespostaCliente" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Aguardar" />
+    <bpmn:boundaryEvent id="MsgOuPrazo" attachedToRef="Aguardar">
+      <bpmn:messageEventDefinition messageRef="Msg" />
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT30M</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Seguir" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndAlt" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Aguardar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Aguardar" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="MsgOuPrazo" targetRef="Seguir" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Seguir" targetRef="EndAlt" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const CALL_ACTIVITY = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:process id="Cobranca" isExecutable="true" name="Cobrança">
+    <bpmn:startEvent id="CobrancaStart" />
+    <bpmn:serviceTask id="Cobrar" name="Cobrar cartão" />
+    <bpmn:userTask id="ConfirmarCobranca" name="Confirmar cobrança" />
+    <bpmn:endEvent id="CobrancaEnd" />
+    <bpmn:sequenceFlow id="c1" sourceRef="CobrancaStart" targetRef="Cobrar" />
+    <bpmn:sequenceFlow id="c2" sourceRef="Cobrar" targetRef="ConfirmarCobranca" />
+    <bpmn:sequenceFlow id="c3" sourceRef="ConfirmarCobranca" targetRef="CobrancaEnd" />
+  </bpmn:process>
+  <bpmn:process id="Pedido" isExecutable="true" name="Pedido">
+    <bpmn:startEvent id="Start" />
+    <bpmn:callActivity id="Chamar" name="Cobrar do cliente" calledElement="Cobranca" />
+    <bpmn:task id="Enviar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Chamar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Chamar" targetRef="Enviar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Enviar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const COMPENSATION = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:serviceTask id="ReservarVoo" name="Reservar voo" />
+    <bpmn:boundaryEvent id="CompVoo" attachedToRef="ReservarVoo">
+      <bpmn:compensateEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="CancelarVoo" name="Cancelar voo" isForCompensation="true" />
+    <bpmn:serviceTask id="ReservarHotel" name="Reservar hotel" />
+    <bpmn:boundaryEvent id="CompHotel" attachedToRef="ReservarHotel">
+      <bpmn:compensateEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="CancelarHotel" name="Cancelar hotel" isForCompensation="true" />
+    <bpmn:exclusiveGateway id="Pagou" default="fFalhou" />
+    <bpmn:endEvent id="ViagemOk" />
+    <bpmn:intermediateThrowEvent id="Desfazer">
+      <bpmn:compensateEventDefinition />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="ViagemCancelada" />
+    <bpmn:association id="a1" sourceRef="CompVoo" targetRef="CancelarVoo" />
+    <bpmn:association id="a2" sourceRef="CompHotel" targetRef="CancelarHotel" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="ReservarVoo" />
+    <bpmn:sequenceFlow id="f1" sourceRef="ReservarVoo" targetRef="ReservarHotel" />
+    <bpmn:sequenceFlow id="f2" sourceRef="ReservarHotel" targetRef="Pagou" />
+    <bpmn:sequenceFlow id="fOk" sourceRef="Pagou" targetRef="ViagemOk">${cond('pago === true')}</bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="fFalhou" sourceRef="Pagou" targetRef="Desfazer" />
+    <bpmn:sequenceFlow id="f3" sourceRef="Desfazer" targetRef="ViagemCancelada" />`);
+
+export const TRANSACTION_CANCEL = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:transaction id="Reserva" name="Reserva">
+      <bpmn:startEvent id="TxStart" />
+      <bpmn:serviceTask id="Debitar" name="Debitar cartão" />
+      <bpmn:boundaryEvent id="CompDebito" attachedToRef="Debitar">
+        <bpmn:compensateEventDefinition />
+      </bpmn:boundaryEvent>
+      <bpmn:serviceTask id="Estornar" name="Estornar" isForCompensation="true" />
+      <bpmn:exclusiveGateway id="Confirmou" default="fCancel" />
+      <bpmn:endEvent id="TxOk" />
+      <bpmn:endEvent id="TxCancel">
+        <bpmn:cancelEventDefinition />
+      </bpmn:endEvent>
+      <bpmn:association id="ta1" sourceRef="CompDebito" targetRef="Estornar" />
+      <bpmn:sequenceFlow id="t0" sourceRef="TxStart" targetRef="Debitar" />
+      <bpmn:sequenceFlow id="t1" sourceRef="Debitar" targetRef="Confirmou" />
+      <bpmn:sequenceFlow id="tOk" sourceRef="Confirmou" targetRef="TxOk">${cond('confirmado === true')}</bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="fCancel" sourceRef="Confirmou" targetRef="TxCancel" />
+    </bpmn:transaction>
+    <bpmn:boundaryEvent id="TxCancelada" attachedToRef="Reserva">
+      <bpmn:cancelEventDefinition />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="AvisarCliente" />
+    <bpmn:task id="Concluir" />
+    <bpmn:endEvent id="End" />
+    <bpmn:endEvent id="EndCancelado" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Reserva" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Reserva" targetRef="Concluir" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Concluir" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="TxCancelada" targetRef="AvisarCliente" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="AvisarCliente" targetRef="EndCancelado" />`);
+
+export const ESCALATION = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:escalation id="Esc" name="ValorAlto" escalationCode="VALOR_ALTO" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Analise" name="Análise">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:serviceTask id="Avaliar" name="Avaliar" />
+      <bpmn:intermediateThrowEvent id="Escalar">
+        <bpmn:escalationEventDefinition escalationRef="Esc" />
+      </bpmn:intermediateThrowEvent>
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s0" sourceRef="SubStart" targetRef="Avaliar" />
+      <bpmn:sequenceFlow id="s1" sourceRef="Avaliar" targetRef="Escalar" />
+      <bpmn:sequenceFlow id="s2" sourceRef="Escalar" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="OnEscalation" attachedToRef="Analise" cancelActivity="false">
+      <bpmn:escalationEventDefinition escalationRef="Esc" />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="AvisarDiretoria" name="Avisar diretoria" />
+    <bpmn:task id="Continuar" />
+    <bpmn:endEvent id="EndAviso" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Analise" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Analise" targetRef="Continuar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Continuar" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="OnEscalation" targetRef="AvisarDiretoria" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="AvisarDiretoria" targetRef="EndAviso" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const RECEIVE_TASK = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:message id="Msg" name="PagamentoConfirmado" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:receiveTask id="AguardarPagamento" name="Aguardar pagamento" messageRef="Msg" />
+    <bpmn:task id="Enviar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="AguardarPagamento" />
+    <bpmn:sequenceFlow id="f1" sourceRef="AguardarPagamento" targetRef="Enviar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Enviar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;

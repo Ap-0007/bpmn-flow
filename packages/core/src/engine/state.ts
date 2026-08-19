@@ -14,7 +14,7 @@ import type { EngineMode, ExecutionStatus, HistoryEntry, WaitReason } from './ty
  *
  * Bump {@link ENGINE_STATE_VERSION} whenever the shape changes.
  */
-export const ENGINE_STATE_VERSION = 3;
+export const ENGINE_STATE_VERSION = 5;
 
 /** Where a token currently sits, since not every token lives in a scope. */
 export type TokenPlacement =
@@ -61,6 +61,25 @@ export interface LoopRunState {
   started: number;
   completed: number;
   instanceScopeIds: string[];
+}
+
+/** An activity whose handler failed and is holding the execution. */
+export interface IncidentState {
+  tokenId: string;
+  nodeId: string;
+  scopeId: string;
+  /** Error message of the last failure. */
+  message: string;
+  /** Failures so far, including the one that opened the incident. */
+  attempts: number;
+  /** Epoch milliseconds of the next automatic retry, when one is scheduled. */
+  retryAt?: number;
+}
+
+/** A completed activity that can still be compensated. */
+export interface CompensationState {
+  activityId: string;
+  scopeId: string;
 }
 
 /** A timer waiting to fire. */
@@ -115,6 +134,9 @@ export interface EngineState {
   eventChoices: EventChoiceState[];
   loops: LoopRunState[];
   timers: TimerState[];
+  /** Completed compensable activities, oldest first. */
+  compensations: CompensationState[];
+  incidents: IncidentState[];
   /** `eventNodeId -> tokenId` of the gateway waiting on that event. */
   armedEvents: [string, string][];
 }

@@ -13,6 +13,7 @@ os que estiverem neste diretório (`GET /api/samples`).
 | `processo-pedido-itens.bpmn`       | Processo de Pedido  | **Multi-instância** sobre a coleção `itens`, com coleção de saída e gateway condicional.      | sim         |
 | `processo-aprovacao-coletiva.bpmn` | Aprovação Coletiva  | Multi-instância de **tarefa de usuário**: uma aprovação por pessoa de `aprovadores`.          | sim         |
 | `processo-suporte-sla.bpmn`        | Atendimento com SLA | **Timer de borda** (`PT2H`), raias e papéis (`potentialOwner`).                               | sim         |
+| `processo-viagem-compensacao.bpmn` | Reserva de Viagem   | **Compensação**: pagamento reprovado desfaz hotel e voo, nessa ordem.                         | sim         |
 
 ## Executando o processo de compras
 
@@ -44,6 +45,18 @@ item, cada uma com `item` e `loopCounter` próprios, agregando `separados`.
 
 No playground, o botão **Adiantar relógio** no painel de timers força o
 vencimento sem esperar as duas horas.
+
+## Executando a reserva de viagem
+
+Com `{ "pago": false }` o evento de compensação desfaz o que já tinha sido
+reservado, na ordem inversa (hotel e depois voo). Com `{ "pago": true }` o
+processo segue direto para "Viagem Confirmada" e nada é desfeito. Pela linha de
+comando, com automação de verdade:
+
+```bash
+bpmn-flow run bpmn-files/processo-viagem-compensacao.bpmn \
+  --vars '{"pago":false}' --handlers ./handlers.mjs
+```
 
 ## Diagramas sem layout
 

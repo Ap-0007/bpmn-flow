@@ -9,7 +9,7 @@ import {
   type TokenSnapshot,
   type ValidationResult,
 } from '@bpmn-flow/core';
-import { BpmnFlowViewer } from '@bpmn-flow/viewer';
+import { BpmnFlowViewer, ExecutionReplay } from '@bpmn-flow/viewer';
 import '@bpmn-flow/viewer/styles.css';
 import 'bpmn-js/dist/assets/diagram-js.css';
 import 'bpmn-js/dist/assets/bpmn-js.css';
@@ -43,6 +43,8 @@ const els = {
   autorun: $<HTMLButtonElement>('autorun'),
   reset: $<HTMLButtonElement>('reset'),
   fit: $<HTMLButtonElement>('fit'),
+  replay: $<HTMLButtonElement>('replay'),
+  metrics: $<HTMLButtonElement>('metrics'),
   newDiagram: $<HTMLButtonElement>('new-diagram'),
   editFile: $<HTMLInputElement>('edit-file'),
   saveName: $<HTMLInputElement>('save-name'),
@@ -66,6 +68,8 @@ let nodesById = new Map<string, FlowNode>();
 let engine: WorkflowEngine | undefined;
 let unbindViewer: (() => void) | undefined;
 let editor: BpmnEditor | undefined;
+let replayTimer: number | undefined;
+let metricsShown = false;
 let editorXml: string | undefined;
 let remoteSamples = false;
 
@@ -127,6 +131,11 @@ async function loadDiagram(xml: string): Promise<void> {
   nodesById = flattenNodes(currentModel);
   await viewer.load(xml);
   teardownEngine();
+  if (replayTimer !== undefined) {
+    window.clearInterval(replayTimer);
+    replayTimer = undefined;
+  }
+  metricsShown = false;
   els.log.replaceChildren();
   els.actions.replaceChildren();
   els.variablesView.textContent = '';
@@ -269,6 +278,36 @@ function renderTimers(): void {
   button.textContent = 'Adiantar relógio';
   button.addEventListener('click', () => void fastForward());
   els.timers.append(button);
+}
+
+/** Reprisa a execução passo a passo a partir do histórico. */
+function replayRun(): void {
+  if (!engine || replayTimer !== undefined) return;
+  const replay = new ExecutionReplay(engine.snapshot().history);
+  if (replay.length === 0) return;
+  viewer.clear();
+  replayTimer = window.setInterval(() => {
+    const frame = replay.next();
+    if (!frame) {
+      window.clearInterval(replayTimer);
+      replayTimer = undefined;
+      if (engine) render(engine.snapshot());
+      return;
+    }
+    viewer.applyReplayFrame(frame);
+    els.status.textContent = `Replay ${frame.index + 1}/${replay.length}: ${label(
+      frame.entry.nodeId,
+    )} (${frame.entry.event})`;
+  }, 400);
+}
+
+/** Liga/desliga as etiquetas de tempo médio por atividade. */
+function toggleMetrics(): void {
+  if (!engine) return;
+  const metrics = engine.metrics();
+  if (metricsShown) viewer.clearMetrics(metrics);
+  else viewer.showMetrics(metrics);
+  metricsShown = !metricsShown;
 }
 
 async function fastForward(): Promise<void> {
@@ -430,6 +469,8 @@ els.reset.addEventListener('click', () => {
   if (currentXml) void loadDiagram(currentXml);
 });
 els.fit.addEventListener('click', () => viewer.fit());
+els.replay.addEventListener('click', () => replayRun());
+els.metrics.addEventListener('click', () => toggleMetrics());
 
 els.modeRun.addEventListener('click', () => void setMode('run'));
 els.modeEdit.addEventListener('click', () => void setMode('edit'));

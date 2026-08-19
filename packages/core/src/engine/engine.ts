@@ -1,19 +1,28 @@
 import { BpmnExecutionError, BpmnValidationError } from '../errors.js';
 import { ProcessGraph } from '../model/graph.js';
 import { isActivityKind } from '../model/kinds.js';
-import type { FlowNode, LoopCharacteristics, ProcessModel, SequenceFlow } from '../model/types.js';
+import type {
+  EventDetail,
+  FlowNode,
+  LoopCharacteristics,
+  ProcessModel,
+  SequenceFlow,
+} from '../model/types.js';
+import type { EventDefinitionKind } from '../model/kinds.js';
 import { Emitter } from './emitter.js';
 import { evaluateCondition, evaluateExpression } from './expression.js';
 import { BpmnError, HandlerRegistry, type TaskHandler } from './handlers.js';
 import {
   ENGINE_STATE_VERSION,
   type EngineState,
+  type IncidentState,
   type ScopeState,
   type TokenState,
   type TimerState,
 } from './state.js';
 import { resolveTimerDueAt } from './timers.js';
 import type {
+  ActivityMetrics,
   EngineEvents,
   EngineOptions,
   ExecutionSnapshot,
@@ -98,6 +107,10 @@ export class WorkflowEngine {
   private readonly inclusiveBuffers = new Map<string, RuntimeToken[]>();
   private readonly eventChoices = new Map<string, EventChoice>();
   private readonly loops = new Map<string, LoopRun>();
+  /** Completed activities that carry a compensation handler, in order. */
+  private readonly compensations: { activityId: string; scopeId: string }[] = [];
+  /** Activities whose handler failed, keyed by token id. */
+  private readonly incidents = new Map<string, IncidentState>();
   /** Pending timers keyed by `tokenId:nodeId`. */
   private readonly timers = new Map<string, TimerState>();
   private readonly armedEvents = new Map<string, string>();
@@ -105,6 +118,8 @@ export class WorkflowEngine {
   private readonly history: HistoryEntry[] = [];
 
   private readonly initialVariables: Record<string, unknown>;
+  /** Other processes of the same definitions, so a call activity can run. */
+  private readonly definitions = new Map<string, ProcessModel>();
   private status: ExecutionStatus = 'idle';
   private tokenSeq = 0;
   private scopeSeq = 0;
@@ -123,6 +138,9 @@ export class WorkflowEngine {
     }
     this.rootGraph = new ProcessGraph(process);
     this.initialVariables = { ...(options.variables ?? {}) };
+    for (const callable of options.processes ?? []) {
+      this.definitions.set(callable.id, callable);
+    }
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
     this.mode = options.mode ?? 'automation';
     this.now = options.now ?? (() => Date.now());
@@ -219,6 +237,99 @@ export class WorkflowEngine {
   }
 
   /**
+   * Where the time went: one entry per activity, ordered by total time spent.
+   * Durations pair each `enter` with the next `complete` of the same node, so a
+   * multi-instance activity reports the sum across its instances.
+   */
+  metrics(): ActivityMetrics[] {
+    const pending = new Map<string, number[]>();
+    const stats = new Map<string, ActivityMetrics>();
+
+    for (const entry of [...this.history].sort((a, b) => a.seq - b.seq)) {
+      const current = stats.get(entry.nodeId) ?? {
+        nodeId: entry.nodeId,
+        nodeKind: entry.nodeKind,
+        started: 0,
+        completed: 0,
+        totalMs: 0,
+        averageMs: 0,
+        maxMs: 0,
+        ...(this.nodeName(entry.nodeId) ? { name: this.nodeName(entry.nodeId) } : {}),
+      };
+      if (entry.event === 'enter') {
+        current.started += 1;
+        const queue = pending.get(entry.nodeId) ?? [];
+        queue.push(entry.at);
+        pending.set(entry.nodeId, queue);
+      } else {
+        current.completed += 1;
+        const startedAt = pending.get(entry.nodeId)?.shift();
+        if (startedAt !== undefined) {
+          const duration = Math.max(0, entry.at - startedAt);
+          current.totalMs += duration;
+          current.maxMs = Math.max(current.maxMs, duration);
+        }
+      }
+      stats.set(entry.nodeId, current);
+    }
+
+    for (const entry of stats.values()) {
+      entry.averageMs = entry.completed > 0 ? entry.totalMs / entry.completed : 0;
+    }
+    return [...stats.values()].sort((a, b) => b.totalMs - a.totalMs);
+  }
+
+  /** Name of a node, looked up across every live scope. */
+  private nodeName(nodeId: string): string | undefined {
+    for (const scope of this.scopes) {
+      const node = scope.graph.node(nodeId);
+      if (node?.name) return node.name;
+    }
+    return undefined;
+  }
+
+  /** Activities whose handler failed and are holding, newest failure first. */
+  incidentList(): IncidentState[] {
+    return [...this.incidents.values()].filter((incident) => this.waiting.has(incident.tokenId));
+  }
+
+  /** Runs a failed activity again, from the incident it left behind. */
+  async retryTask(tokenId: string): Promise<ExecutionSnapshot> {
+    const token = this.waiting.get(tokenId);
+    if (!token || token.waiting !== 'incident') {
+      throw new BpmnExecutionError(`No incident for token: ${tokenId}`);
+    }
+    this.waiting.delete(tokenId);
+    token.waiting = undefined;
+    this.clearTimersFor(tokenId);
+    this.ready.push(token);
+    await this.drain();
+    return this.snapshot();
+  }
+
+  /**
+   * Gives up on the failing activity and moves on as if it had succeeded,
+   * optionally writing the output a human decided on.
+   */
+  async resolveIncident(
+    tokenId: string,
+    output?: Record<string, unknown>,
+  ): Promise<ExecutionSnapshot> {
+    const token = this.waiting.get(tokenId);
+    if (!token || token.waiting !== 'incident') {
+      throw new BpmnExecutionError(`No incident for token: ${tokenId}`);
+    }
+    if (output) this.assignVariables(token.scope, output);
+    this.waiting.delete(tokenId);
+    token.waiting = undefined;
+    this.incidents.delete(tokenId);
+    this.completeNode(token);
+    this.leaveViaOutgoing(token);
+    await this.drain();
+    return this.snapshot();
+  }
+
+  /**
    * Timers waiting to fire, earliest first. A host can use the first due date
    * to decide when to call {@link tick} again.
    */
@@ -226,9 +337,16 @@ export class WorkflowEngine {
     return [...this.timers.values()].sort((a, b) => a.dueAt - b.dueAt);
   }
 
-  /** Epoch milliseconds of the next timer, or `undefined` when there is none. */
+  /**
+   * Epoch milliseconds of the next thing that fires on its own — a timer or a
+   * scheduled retry — or `undefined` when nothing is pending.
+   */
   nextTimerAt(): number | undefined {
-    return this.dueTimers()[0]?.dueAt;
+    const retries = this.incidentList()
+      .map((incident) => incident.retryAt)
+      .filter((at): at is number => at !== undefined);
+    const due = [...this.dueTimers().map((timer) => timer.dueAt), ...retries];
+    return due.length > 0 ? Math.min(...due) : undefined;
   }
 
   /**
@@ -241,6 +359,18 @@ export class WorkflowEngine {
       if (entry.dueAt > now) break;
       if (!this.timers.has(timerKey(entry.tokenId, entry.nodeId))) continue;
       if (this.fireTimer(entry)) fired = true;
+    }
+    // Scheduled retries are due dates too.
+    for (const incident of [...this.incidents.values()]) {
+      if (incident.retryAt === undefined || incident.retryAt > now) continue;
+      const token = this.waiting.get(incident.tokenId);
+      if (!token || token.waiting !== 'incident') continue;
+      this.waiting.delete(token.id);
+      token.waiting = undefined;
+      const { retryAt: _scheduled, ...pending } = incident;
+      this.incidents.set(incident.tokenId, pending);
+      this.ready.push(token);
+      fired = true;
     }
     if (fired) await this.drain();
     return this.snapshot();
@@ -341,6 +471,8 @@ export class WorkflowEngine {
       })),
       armedEvents: [...this.armedEvents],
       timers: [...this.timers.values()].map((timer) => ({ ...timer })),
+      compensations: this.compensations.map((entry) => ({ ...entry })),
+      incidents: this.incidentList().map((incident) => ({ ...incident })),
       loops: [...this.loops.values()].map((run) => ({
         id: run.id,
         nodeId: run.nodeId,
@@ -365,7 +497,7 @@ export class WorkflowEngine {
   static restore(
     process: ProcessModel,
     state: EngineState,
-    options: Pick<EngineOptions, 'mode' | 'maxSteps'> = {},
+    options: Pick<EngineOptions, 'mode' | 'maxSteps' | 'processes' | 'now'> = {},
   ): WorkflowEngine {
     if (state.version !== ENGINE_STATE_VERSION) {
       throw new BpmnValidationError(
@@ -381,6 +513,8 @@ export class WorkflowEngine {
       mode: options.mode ?? state.mode,
       maxSteps: options.maxSteps ?? state.maxSteps,
       variables: state.variables,
+      ...(options.processes ? { processes: options.processes } : {}),
+      ...(options.now ? { now: options.now } : {}),
     });
     engine.hydrate(state);
     return engine;
@@ -486,6 +620,9 @@ export class WorkflowEngine {
     for (const timer of state.timers) {
       this.timers.set(timerKey(timer.tokenId, timer.nodeId), { ...timer });
     }
+    for (const entry of state.compensations ?? []) this.compensations.push({ ...entry });
+    for (const incident of state.incidents ?? [])
+      this.incidents.set(incident.tokenId, { ...incident });
 
     for (const stored of state.loops) {
       const scope = scopesById.get(stored.scopeId);
@@ -526,10 +663,11 @@ export class WorkflowEngine {
     if (loopId) return parent.graph;
     if (!hostNodeId) throw new BpmnValidationError(`Child scope ${stored.id} has no host node.`);
     const host = parent.graph.requireNode(hostNodeId);
-    if (!host.process) {
+    const called = this.processFor(host);
+    if (!called) {
       throw new BpmnValidationError(`Host node ${hostNodeId} no longer defines a subprocess.`);
     }
-    return new ProcessGraph(host.process);
+    return new ProcessGraph(called);
   }
 
   // --- Scope & token plumbing -------------------------------------------
@@ -565,6 +703,10 @@ export class WorkflowEngine {
     token.scope.tokens.delete(token);
     this.waiting.delete(token.id);
     this.clearTimersFor(token.id);
+    // A discarded token must never be processed again, even if it was already
+    // queued — cancellation (terminate, interrupting boundary) relies on this.
+    const queued = this.ready.indexOf(token);
+    if (queued >= 0) this.ready.splice(queued, 1);
   }
 
   /** Moves a token from a link throw event to the matching link catch event. */
@@ -599,17 +741,21 @@ export class WorkflowEngine {
   private armTimers(token: RuntimeToken): void {
     const node = token.scope.graph.node(token.nodeId);
     if (!node) return;
-    if (node.event?.kind === 'timer' && node.kind !== 'boundaryEvent') {
-      this.armTimer(token, node, 'catch', node.event.timer);
+    const timer = detailOfKind(node, 'timer');
+    if (timer && node.kind !== 'boundaryEvent') {
+      this.armTimer(token, node, 'catch', timer.timer);
     }
-    this.armBoundaryTimers(token);
+    // A boundary event belongs to the activity as a whole, so a multi-instance
+    // activity arms it once (in startLoop), not once per instance.
+    if (!token.loopInstanceOf) this.armBoundaryTimers(token);
   }
 
   /** Arms timer boundary events attached to the activity the token sits on. */
   private armBoundaryTimers(token: RuntimeToken): void {
     for (const boundary of token.scope.graph.boundaryEvents(token.nodeId)) {
-      if (boundary.event?.kind !== 'timer') continue;
-      this.armTimer(token, boundary, 'boundary', boundary.event.timer);
+      const timer = detailOfKind(boundary, 'timer');
+      if (!timer) continue;
+      this.armTimer(token, boundary, 'boundary', timer.timer);
     }
   }
 
@@ -760,6 +906,8 @@ export class WorkflowEngine {
       }
       // No ready tokens: check inclusive joins that can now fire.
       if (this.fireReadyInclusiveJoins()) continue;
+      // A conditional event fires as soon as its condition holds.
+      if (this.fireReadyConditionalEvents()) continue;
       // Auto mode resolves the next wait to keep the simulation moving.
       if (this.mode === 'auto' && this.autoResolveWait()) continue;
       break;
@@ -780,12 +928,7 @@ export class WorkflowEngine {
       return;
     }
     this.emitter.emit('node.enter', { nodeId: node.id, nodeKind: node.kind, tokenId: token.id });
-    this.history.push({
-      nodeId: node.id,
-      nodeKind: node.kind,
-      event: 'enter',
-      at: this.history.length,
-    });
+    this.record(node, 'enter');
 
     switch (true) {
       case node.kind === 'startEvent':
@@ -795,12 +938,18 @@ export class WorkflowEngine {
       case node.kind === 'endEvent':
         await this.handleEndEvent(token, node);
         return;
-      case node.kind === 'intermediateThrowEvent':
+      case node.kind === 'intermediateThrowEvent': {
         // A link throw jumps to its matching catch instead of flowing on.
-        if (node.event?.kind === 'link' && this.followLink(token, node)) return;
+        if (detailOfKind(node, 'link') && this.followLink(token, node)) return;
+        const compensation = detailOfKind(node, 'compensation');
+        if (compensation) await this.compensate(token.scope, compensation.activityRef);
+        const escalation = detailOfKind(node, 'escalation');
+        // An escalation is a shout for help: the branch carries on either way.
+        if (escalation) this.raiseEscalation(token.scope, escalation.code ?? escalation.reference);
         this.completeNode(token);
         this.leaveViaOutgoing(token);
         return;
+      }
       case node.kind === 'intermediateCatchEvent':
         this.park(token, 'catchEvent');
         return;
@@ -817,12 +966,12 @@ export class WorkflowEngine {
         this.handleEventBased(token, node);
         return;
       case node.kind === 'complexGateway':
-        // Best-effort: behave like an inclusive gateway.
-        this.handleInclusive(token, node);
+        this.handleComplex(token, node);
         return;
       case node.kind === 'subProcess' ||
         node.kind === 'transaction' ||
-        node.kind === 'adHocSubProcess':
+        node.kind === 'adHocSubProcess' ||
+        (node.kind === 'callActivity' && this.processFor(node) !== undefined):
         this.handleSubProcess(token, node);
         return;
       default:
@@ -838,6 +987,23 @@ export class WorkflowEngine {
     const kind = node.event?.kind ?? 'none';
     if (kind === 'terminate') {
       this.terminateScope(token.scope);
+      return;
+    }
+    if (kind === 'compensation') {
+      await this.compensate(token.scope, node.event?.activityRef);
+      this.discard(token);
+      this.checkScopeCompletion(token.scope);
+      return;
+    }
+    if (kind === 'cancel') {
+      await this.cancelTransaction(token);
+      return;
+    }
+    if (kind === 'escalation') {
+      this.discard(token);
+      const detail = node.event;
+      this.raiseEscalation(token.scope, detail?.code ?? detail?.reference);
+      this.checkScopeCompletion(token.scope);
       return;
     }
     if (kind === 'error') {
@@ -891,16 +1057,70 @@ export class WorkflowEngine {
         this.fail(error);
         return;
       }
-      this.fail(error instanceof Error ? error : new Error(String(error)));
+      this.handleFailure(token, node, error instanceof Error ? error : new Error(String(error)));
       return;
     }
+    this.incidents.delete(token.id);
     this.emitter.emit('activity.end', { nodeId: node.id, tokenId: token.id });
     this.completeNode(token);
     this.leaveViaOutgoing(token);
   }
 
+  /**
+   * A handler threw something that is not a business error: retry it, hold it
+   * as an incident, or fail the execution — depending on the options.
+   */
+  private handleFailure(token: RuntimeToken, node: FlowNode, error: Error): void {
+    const attempts = (this.incidents.get(token.id)?.attempts ?? 0) + 1;
+    const allowed = this.options.retry?.attempts ?? 0;
+    const incident: IncidentState = {
+      tokenId: token.id,
+      nodeId: node.id,
+      scopeId: token.scope.id,
+      message: error.message,
+      attempts,
+    };
+
+    if (attempts <= allowed) {
+      const delay = this.options.retry?.delay;
+      const retryAt = delay ? resolveTimerDueAt(delay, this.now()) : undefined;
+      if (retryAt === undefined) {
+        // Retry right away: back to the queue, the step guard bounds the loop.
+        this.incidents.set(token.id, incident);
+        this.ready.push(token);
+        return;
+      }
+      this.incidents.set(token.id, { ...incident, retryAt });
+      this.park(token, 'incident');
+      this.emitter.emit('error', { nodeId: node.id, error });
+      return;
+    }
+
+    if ((this.options.onHandlerError ?? 'fail') === 'incident') {
+      this.incidents.set(token.id, incident);
+      this.park(token, 'incident');
+      this.emitter.emit('error', { nodeId: node.id, error });
+      return;
+    }
+    this.incidents.delete(token.id);
+    this.fail(error);
+  }
+
+  /**
+   * The process an activity runs: the embedded one for a subprocess, or the
+   * process a call activity references, when it is part of the definitions.
+   */
+  private processFor(node: FlowNode): ProcessModel | undefined {
+    if (node.process) return node.process;
+    if (node.kind === 'callActivity' && node.calledElement) {
+      return this.definitions.get(node.calledElement);
+    }
+    return undefined;
+  }
+
   private handleSubProcess(token: RuntimeToken, node: FlowNode): void {
-    if (!node.process) {
+    const called = this.processFor(node);
+    if (!called) {
       // Nothing to run inside: behave as a pass-through activity.
       this.completeNode(token);
       this.leaveViaOutgoing(token);
@@ -909,7 +1129,7 @@ export class WorkflowEngine {
     this.emitter.emit('activity.start', { nodeId: node.id, tokenId: token.id });
     token.scope.tokens.delete(token); // suspend parent while child runs
     this.armBoundaryTimers(token);
-    const childGraph = new ProcessGraph(node.process);
+    const childGraph = new ProcessGraph(called);
     const child = this.createScope(childGraph, token, node.id);
     const starts = childGraph.startNodes().filter((s) => !s.event || s.event.kind === 'none');
     if (starts.length === 0) {
@@ -929,6 +1149,73 @@ export class WorkflowEngine {
     this.emitter.emit('activity.end', { nodeId: hostId, tokenId: parent.id });
     this.completeNode(parent);
     this.leaveViaOutgoing(parent);
+  }
+
+  // --- Compensation & cancellation ---------------------------------------
+
+  /** The activity that undoes `activityId`, via its compensation boundary. */
+  private compensationHandlerFor(scope: Scope, activityId: string): FlowNode | undefined {
+    for (const boundary of scope.graph.boundaryEvents(activityId)) {
+      if (!detailOfKind(boundary, 'compensation')) continue;
+      for (const targetId of scope.graph.associationsFrom(boundary.id)) {
+        const handler = scope.graph.node(targetId);
+        if (handler) return handler;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Runs the compensation handlers of the scope in reverse completion order —
+   * the last thing done is the first thing undone. `activityRef` narrows it to
+   * a single activity, as a targeted compensation event does.
+   */
+  private async compensate(scope: Scope, activityRef?: string): Promise<void> {
+    for (let index = this.compensations.length - 1; index >= 0; index--) {
+      const entry = this.compensations[index]!;
+      if (entry.scopeId !== scope.id) continue;
+      if (activityRef && entry.activityId !== activityRef) continue;
+      this.compensations.splice(index, 1); // an activity is compensated once
+      const handler = this.compensationHandlerFor(scope, entry.activityId);
+      if (!handler) continue;
+      const token = this.spawn(scope, handler.id);
+      // Run it now: the throw event only continues once the undo is done.
+      this.ready.splice(this.ready.indexOf(token), 1);
+      this.emitter.emit('activity.start', { nodeId: handler.id, tokenId: token.id });
+      await this.processToken(token);
+    }
+  }
+
+  /**
+   * Cancel end event inside a transaction: undo what the transaction already
+   * did, drop the rest of its work and leave through the cancel boundary event.
+   */
+  private async cancelTransaction(token: RuntimeToken): Promise<void> {
+    const scope = token.scope;
+    await this.compensate(scope);
+    this.discard(token);
+
+    const parentToken = scope.parentToken;
+    const hostId = scope.hostNodeId;
+    this.cancelLoopsOf(scope);
+    for (const remaining of [...scope.tokens]) this.discard(remaining);
+    this.removeScope(scope);
+
+    if (!parentToken || !hostId) {
+      // A cancel outside a transaction ends the process instance.
+      this.status = 'terminated';
+      return;
+    }
+    const parentScope = parentToken.scope;
+    this.discard(parentToken);
+    const boundary = parentScope.graph
+      .boundaryEvents(hostId)
+      .find((candidate) => detailOfKind(candidate, 'cancel'));
+    if (boundary) {
+      this.emitBoundary(parentScope, boundary);
+      return;
+    }
+    this.checkScopeCompletion(parentScope);
   }
 
   // --- Multi-instance & loops -------------------------------------------
@@ -1094,13 +1381,36 @@ export class WorkflowEngine {
     const parent = run.parentToken;
     parent.scope.tokens.add(parent);
     this.emitter.emit('activity.end', { nodeId: run.nodeId, tokenId: parent.id });
-    this.completeNode(parent);
+    this.completeNode(parent, { history: false });
     this.leaveViaOutgoing(parent);
+  }
+
+  /** Discards every instance of a repeated activity and forgets the run. */
+  private cancelLoop(run: LoopRun): void {
+    this.loops.delete(run.id);
+    for (const scope of [...run.instanceScopes]) {
+      for (const token of [...scope.tokens]) this.discard(token);
+      this.removeScope(scope);
+    }
+    run.instanceScopes.clear();
+  }
+
+  /** Cancels every repeated activity living in the given scope. */
+  private cancelLoopsOf(scope: Scope): void {
+    for (const run of [...this.loops.values()]) {
+      if (run.scope !== scope) continue;
+      this.cancelLoop(run);
+      this.discard(run.parentToken);
+    }
   }
 
   private removeScope(scope: Scope): void {
     const index = this.scopes.indexOf(scope);
     if (index >= 0) this.scopes.splice(index, 1);
+    // Nothing left to compensate in a scope that no longer exists.
+    for (let i = this.compensations.length - 1; i >= 0; i--) {
+      if (this.compensations[i]!.scopeId === scope.id) this.compensations.splice(i, 1);
+    }
   }
 
   // --- Gateways ----------------------------------------------------------
@@ -1150,6 +1460,15 @@ export class WorkflowEngine {
     this.completeNode(token);
     this.inclusiveSplit(token, node);
     this.discard(token);
+  }
+
+  /**
+   * Complex gateway. With an `activationCondition` the join fires when that
+   * expression turns true (the number of tokens that arrived is exposed as
+   * `arrived`); without one it behaves like an inclusive gateway.
+   */
+  private handleComplex(token: RuntimeToken, node: FlowNode): void {
+    this.handleInclusive(token, node);
   }
 
   private handleEventBased(token: RuntimeToken, node: FlowNode): void {
@@ -1281,9 +1600,9 @@ export class WorkflowEngine {
   private deliverSignal(nameOrId: string): boolean {
     let delivered = false;
 
-    // 1. Parked catch events (match by node id or event reference).
+    // 1. Parked catch events and receive tasks (by node id or event reference).
     const parked = [...this.waiting.values()].filter((token) => {
-      if (token.waiting !== 'catchEvent') return false;
+      if (token.waiting !== 'catchEvent' && token.waiting !== 'receiveTask') return false;
       const node = token.scope.graph.node(token.nodeId);
       return node ? matchesTrigger(node, nameOrId) : false;
     });
@@ -1387,6 +1706,30 @@ export class WorkflowEngine {
     return false;
   }
 
+  /**
+   * Escalation travels outwards: it looks for an escalation boundary event on
+   * the activity that hosts this scope, then for an escalation event
+   * subprocess. Unlike an error, an unhandled escalation is not a failure.
+   */
+  private raiseEscalation(scope: Scope, code?: string): boolean {
+    for (let current: Scope | undefined = scope; current; current = current.parentScope) {
+      const hostId = current.hostNodeId;
+      const parentScope = current.parentToken?.scope ?? current.parentScope;
+      if (!hostId || !parentScope) continue;
+      const boundary = parentScope.graph.boundaryEvents(hostId).find((candidate) => {
+        const detail = detailOfKind(candidate, 'escalation');
+        if (!detail) return false;
+        return !code || !detail.code || detail.code === code;
+      });
+      if (boundary && this.fireBoundary(parentScope, boundary)) return true;
+    }
+    return this.startEventSubProcesses((start) => {
+      const detail = detailOfKind(start, 'escalation');
+      if (!detail) return false;
+      return !code || !detail.code || detail.code === code;
+    });
+  }
+
   /** True when an event subprocess with a matching error start event ran. */
   private raiseErrorOnEventSubProcess(code?: string): boolean {
     return this.startEventSubProcesses(
@@ -1398,8 +1741,9 @@ export class WorkflowEngine {
   private raiseErrorOnActivity(scope: Scope, activityId: string, code?: string): boolean {
     for (const node of scope.graph.allNodes()) {
       if (node.kind !== 'boundaryEvent' || node.attachedToRef !== activityId) continue;
-      if (node.event?.kind !== 'error') continue;
-      if (code && node.event.code && node.event.code !== code) continue;
+      const error = detailOfKind(node, 'error');
+      if (!error) continue;
+      if (code && error.code && error.code !== code) continue;
       // Route from the boundary (activity token already discarded).
       const chosen = this.spawn(scope, node.id);
       this.completeNode(chosen);
@@ -1427,10 +1771,25 @@ export class WorkflowEngine {
   private fireBoundary(scope: Scope, boundary: FlowNode): boolean {
     const hostId = boundary.attachedToRef!;
     const interrupting = boundary.cancelActivity !== false;
+
+    // Host is a repeated activity: the event applies to every instance at once.
+    const run = [...this.loops.values()].find(
+      (candidate) => candidate.nodeId === hostId && candidate.scope === scope,
+    );
+    if (run) {
+      if (interrupting) {
+        this.cancelLoop(run);
+        this.discard(run.parentToken);
+      }
+      this.emitBoundary(scope, boundary);
+      return true;
+    }
+
     // Find the host token: a waiting task token, or a suspended subprocess parent.
     const childScope = this.scopes.find((s) => s.hostNodeId === hostId && s.parentToken);
     if (childScope) {
       if (interrupting) {
+        this.cancelLoopsOf(childScope);
         for (const t of [...childScope.tokens]) this.discard(t);
         this.scopes.splice(this.scopes.indexOf(childScope), 1);
         const parent = childScope.parentToken!;
@@ -1463,11 +1822,38 @@ export class WorkflowEngine {
       const first = buffer[0]!;
       const scope = first.scope;
       const node = scope.graph.requireNode(first.nodeId);
-      if (this.canAnyTokenReach(scope, node.id, buffer)) continue;
+      if (node.activationCondition) {
+        // Complex gateway: the diagram decides when enough tokens arrived.
+        const variables = { ...this.mergedVariables(scope), arrived: buffer.length };
+        if (!evaluateCondition(node.activationCondition, variables)) continue;
+      } else if (this.canAnyTokenReach(scope, node.id, buffer)) {
+        continue;
+      }
       this.inclusiveBuffers.delete(key);
       this.completeNode(first);
       // Merge all buffered tokens into a single continuation.
       this.inclusiveSplit(first, node);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Resumes a parked conditional catch event whose condition became true.
+   * Evaluated whenever the engine runs out of ready tokens, which is when the
+   * variables have settled.
+   */
+  private fireReadyConditionalEvents(): boolean {
+    for (const token of [...this.waiting.values()]) {
+      if (token.waiting !== 'catchEvent') continue;
+      const node = token.scope.graph.node(token.nodeId);
+      const condition = node ? detailOfKind(node, 'conditional')?.condition : undefined;
+      if (!condition) continue;
+      if (!evaluateCondition(condition, this.mergedVariables(token.scope))) continue;
+      this.waiting.delete(token.id);
+      token.waiting = undefined;
+      this.completeNode(token);
+      this.leaveViaOutgoing(token);
       return true;
     }
     return false;
@@ -1519,6 +1905,8 @@ export class WorkflowEngine {
   }
 
   private terminateScope(scope: Scope): void {
+    // Repeated activities keep their tokens outside the scope: cancel them too.
+    this.cancelLoopsOf(scope);
     for (const token of [...scope.tokens]) this.discard(token);
     if (scope.parentToken) {
       this.finishSubProcess(scope);
@@ -1548,17 +1936,30 @@ export class WorkflowEngine {
     return false;
   }
 
-  private completeNode(token: RuntimeToken): void {
+  /**
+   * Marks the node as completed. `history: false` keeps the bookkeeping without
+   * a history entry — used when a repeated activity finishes, since each
+   * instance already recorded its own enter/complete pair.
+   */
+  private completeNode(token: RuntimeToken, options: { history?: boolean } = {}): void {
     this.completedNodes.add(token.nodeId);
     const node = token.scope.graph.node(token.nodeId);
-    if (node) {
-      this.history.push({
-        nodeId: node.id,
-        nodeKind: node.kind,
-        event: 'complete',
-        at: this.history.length,
-      });
+    if (node && this.compensationHandlerFor(token.scope, node.id)) {
+      // Remember it so a later compensation event can undo it, newest first.
+      this.compensations.push({ activityId: node.id, scopeId: token.scope.id });
     }
+    if (node && options.history !== false) this.record(node, 'complete');
+  }
+
+  /** Appends to the history with the engine clock, keeping order explicit. */
+  private record(node: FlowNode, event: HistoryEntry['event']): void {
+    this.history.push({
+      nodeId: node.id,
+      nodeKind: node.kind,
+      event,
+      at: this.now(),
+      seq: this.history.length,
+    });
   }
 
   private fail(error: Error): void {
@@ -1600,9 +2001,23 @@ function matchesFilter(task: PendingTask, filter: TaskFilter): boolean {
   return true;
 }
 
-/** A trigger matches a node by its id or by the referenced event name. */
+/** Every event definition declared on a node (one `none` when it declares none). */
+function detailsOf(node: FlowNode): EventDetail[] {
+  return node.events ?? (node.event ? [node.event] : []);
+}
+
+/** A trigger matches a node by its id, its message, or any event reference. */
 function matchesTrigger(node: FlowNode, nameOrId: string): boolean {
-  return node.id === nameOrId || node.event?.reference === nameOrId;
+  return (
+    node.id === nameOrId ||
+    node.messageRef === nameOrId ||
+    detailsOf(node).some((detail) => detail.reference === nameOrId)
+  );
+}
+
+/** First definition of a given kind, when the node declares one. */
+function detailOfKind(node: FlowNode, kind: EventDefinitionKind): EventDetail | undefined {
+  return detailsOf(node).find((detail) => detail.kind === kind);
 }
 
 /** Timers are unique per (token, timer node) pair. */

@@ -8,8 +8,10 @@ export { WorkflowEngine } from './engine/engine.js';
 export { ENGINE_STATE_VERSION } from './engine/state.js';
 export { parseIsoDuration, resolveTimerDueAt } from './engine/timers.js';
 export type {
+  CompensationState,
   EngineState,
   EventChoiceState,
+  IncidentState,
   LoopRunState,
   InclusiveBufferState,
   ParallelBufferState,
@@ -23,6 +25,7 @@ export type { HandlerContext, TaskHandler, HandlerSelector } from './engine/hand
 export { evaluateCondition, evaluateExpression } from './engine/expression.js';
 export { Emitter } from './engine/emitter.js';
 export type {
+  ActivityMetrics,
   EngineEvents,
   EngineMode,
   EngineOptions,

@@ -62,7 +62,15 @@ Decisões por construção:
   declara.
 - Multi-instância: cada instância roda num escopo próprio (com `loopCounter` e o
   item), o token da atividade fica suspenso até todas terminarem, e a coleção de
-  saída é montada instância a instância.
+  saída é montada instância a instância. Um evento de borda pertence à atividade
+  como um todo: dispará-lo cancela todas as instâncias.
+- Compensação: cada atividade compensável concluída entra numa pilha do escopo;
+  um evento de compensação executa os tratadores na ordem inversa antes de o
+  token seguir. `transaction` + cancel faz isso e sai pelo evento de borda de
+  cancelamento.
+- Falha de handler: `BpmnError` é erro de negócio (evento de borda/event
+  subprocess); qualquer outro erro passa por `retry` e, com
+  `onHandlerError: "incident"`, vira incidente em vez de matar a execução.
 
 Timers viram data de vencimento (`resolveTimerDueAt`) quando o token para no
 evento — ou quando a atividade com evento de borda começa a esperar. O motor não
@@ -106,7 +114,7 @@ Serve também exemplos `.bpmn` e assets estáticos com fallback de SPA.
   tarefa comum, sem instanciar o processo chamado.
 - A junção inclusiva usa alcançabilidade estrutural, adequada para modelos bem
   formados; topologias muito irregulares podem exigir revisão.
-- Compensação, transações com rollback e call activity instanciando o processo
-  chamado continuam fora do escopo do motor.
+- Mapeamento de dados (`ioSpecification`), correlação de mensagem por chave e
+  DMN continuam fora do escopo do motor.
 - O editor do playground (`bpmn-js`) exige DI no XML. Diagramas sem layout
   abrem no viewer (auto-layout), mas não no editor.

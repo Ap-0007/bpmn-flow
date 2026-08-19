@@ -3,11 +3,14 @@ import {
   parseBpmn,
   WorkflowEngine,
   type EngineMode,
+  type EngineOptions,
   type ExecutionSnapshot,
   type ExecutionStatus,
+  type IncidentState,
   type PendingTask,
   type ProcessModel,
   type TaskFilter,
+  type TaskHandler,
 } from '@bpmn-flow/core';
 import type { SessionStorage } from './storage.js';
 
@@ -15,6 +18,10 @@ export interface CreateSessionInput {
   xml: string;
   mode?: EngineMode;
   variables?: Record<string, unknown>;
+  /** `incident` holds a failing activity instead of failing the execution. */
+  onHandlerError?: EngineOptions['onHandlerError'];
+  /** Automatic retries before an incident is opened. */
+  retry?: EngineOptions['retry'];
 }
 
 export interface Session {
@@ -41,6 +48,17 @@ interface LiveSession extends Session {
   engine: WorkflowEngine;
 }
 
+export interface SessionStoreOptions {
+  /** Where sessions are persisted. In-memory only when omitted. */
+  storage?: SessionStorage;
+  /**
+   * Automation registered on every engine this store creates or restores,
+   * keyed by node id, element kind or the `*` wildcard. Without it, automatic
+   * activities simply pass through.
+   */
+  handlers?: Record<string, TaskHandler>;
+}
+
 /**
  * Registry of running executions. Each session owns a {@link WorkflowEngine}
  * that can be driven over HTTP (complete a user task or deliver a signal).
@@ -52,14 +70,33 @@ interface LiveSession extends Session {
  */
 export class SessionStore {
   private readonly cache = new Map<string, LiveSession>();
+  private readonly storage: SessionStorage | undefined;
+  private readonly handlers: Record<string, TaskHandler>;
 
-  constructor(private readonly storage?: SessionStorage) {}
+  constructor(options: SessionStoreOptions = {}) {
+    this.storage = options.storage;
+    this.handlers = options.handlers ?? {};
+  }
+
+  /** Applies the store's automation to a freshly built engine. */
+  private wire(engine: WorkflowEngine): WorkflowEngine {
+    for (const [selector, handler] of Object.entries(this.handlers)) {
+      engine.registerHandler(selector, handler);
+    }
+    return engine;
+  }
 
   async create(input: CreateSessionInput): Promise<Session> {
-    const engine = new WorkflowEngine(await firstProcess(input.xml), {
-      ...(input.mode ? { mode: input.mode } : {}),
-      ...(input.variables ? { variables: input.variables } : {}),
-    });
+    const { process, processes } = await readProcesses(input.xml);
+    const engine = this.wire(
+      new WorkflowEngine(process, {
+        processes,
+        ...(input.mode ? { mode: input.mode } : {}),
+        ...(input.variables ? { variables: input.variables } : {}),
+        ...(input.onHandlerError ? { onHandlerError: input.onHandlerError } : {}),
+        ...(input.retry ? { retry: input.retry } : {}),
+      }),
+    );
     const snapshot = await engine.start();
     const session: LiveSession = { id: randomUUID(), xml: input.xml, snapshot, engine };
     this.cache.set(session.id, session);
@@ -105,6 +142,32 @@ export class SessionStore {
       for (const task of session.engine.tasks(filter)) inbox.push({ sessionId: id, ...task });
     }
     return inbox;
+  }
+
+  /** Activities of one session whose handler failed. */
+  async incidents(id: string): Promise<IncidentState[]> {
+    const session = await this.require(id);
+    return session.engine.incidentList();
+  }
+
+  /** Runs a failed activity again. */
+  async retry(id: string, tokenId: string): Promise<Session> {
+    const session = await this.require(id);
+    session.snapshot = await session.engine.retryTask(tokenId);
+    await this.persist(session);
+    return view(session);
+  }
+
+  /** Gives up on a failed activity and moves the process on. */
+  async resolveIncident(
+    id: string,
+    tokenId: string,
+    output?: Record<string, unknown>,
+  ): Promise<Session> {
+    const session = await this.require(id);
+    session.snapshot = await session.engine.resolveIncident(tokenId, output);
+    await this.persist(session);
+    return view(session);
   }
 
   /** Fires the timers of one session that are due at `now`. */
@@ -179,7 +242,8 @@ export class SessionStore {
     if (cached) return cached;
     const record = await this.storage?.read(id);
     if (!record) return undefined;
-    const engine = WorkflowEngine.restore(await firstProcess(record.xml), record.state);
+    const { process, processes } = await readProcesses(record.xml);
+    const engine = this.wire(WorkflowEngine.restore(process, record.state, { processes }));
     const session: LiveSession = {
       id: record.id,
       xml: record.xml,
@@ -206,11 +270,14 @@ export class SessionStore {
   }
 }
 
-async function firstProcess(xml: string): Promise<ProcessModel> {
+/** The process to run plus every process of the file, for call activities. */
+async function readProcesses(
+  xml: string,
+): Promise<{ process: ProcessModel; processes: ProcessModel[] }> {
   const model = await parseBpmn(xml);
   const process = model.processes[0];
   if (!process) throw new Error('No executable process found.');
-  return process;
+  return { process, processes: model.processes };
 }
 
 function view(session: LiveSession): Session {

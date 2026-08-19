@@ -1,11 +1,17 @@
 import { serve } from '@hono/node-server';
 import { createApp, type AppOptions } from './app.js';
+import { storeOptionsFrom } from './app.js';
 import { SessionStore } from './sessions.js';
-import { FileSessionStorage } from './storage.js';
 
 export { createApp, type AppOptions } from './app.js';
 export { SessionStore, SessionNotFoundError } from './sessions.js';
-export type { CreateSessionInput, InboxTask, Session, SessionSummary } from './sessions.js';
+export type {
+  CreateSessionInput,
+  InboxTask,
+  Session,
+  SessionStoreOptions,
+  SessionSummary,
+} from './sessions.js';
 export { FileSessionStorage, InvalidSessionIdError } from './storage.js';
 export type { SessionRecord, SessionStorage } from './storage.js';
 export { SampleProvider, type SampleInfo } from './samples.js';
@@ -31,9 +37,7 @@ export interface RunningServer {
  */
 export function startServer(options: ServerOptions = {}): RunningServer {
   const port = options.port ?? 3000;
-  const sessions =
-    options.sessions ??
-    new SessionStore(options.dataDir ? new FileSessionStorage(options.dataDir) : undefined);
+  const sessions = options.sessions ?? new SessionStore(storeOptionsFrom(options));
   const app = createApp({ ...options, sessions });
   const server = serve({
     fetch: app.fetch,

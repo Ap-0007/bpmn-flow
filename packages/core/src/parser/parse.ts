@@ -9,6 +9,7 @@ import {
   isEventKind,
 } from '../model/kinds.js';
 import type {
+  Association,
   BpmnModel,
   EventDetail,
   FlowNode,
@@ -40,19 +41,22 @@ function toElementKind($type: string): ElementKind | null {
   return ELEMENT_KINDS.has(camel) ? (camel as ElementKind) : null;
 }
 
+/** XSD element names that do not match the model's vocabulary. */
+const KIND_ALIASES: Record<string, EventDefinitionKind> = {
+  // `bpmn:CompensateEventDefinition` is the compensation trigger.
+  compensate: 'compensation',
+};
+
 /** `bpmn:TimerEventDefinition` -> `timer`. */
 function toEventDefinitionKind($type: string): EventDefinitionKind {
   const local = $type.replace(/^[^:]+:/, '').replace(/EventDefinition$/, '');
   const camel = local.charAt(0).toLowerCase() + local.slice(1);
-  return camel as EventDefinitionKind;
+  return KIND_ALIASES[camel] ?? (camel as EventDefinitionKind);
 }
 
-function readEventDetail(defs: MdEventDefinition[] | undefined): EventDetail | undefined {
-  if (!defs || defs.length === 0) return { kind: 'none' };
-  const def = defs[0];
-  if (!def) return { kind: 'none' };
-  const kind = toEventDefinitionKind(def.$type);
-  const detail: EventDetail = { kind };
+/** One `bpmn:*EventDefinition` turned into a normalized detail. */
+function readEventDetail(def: MdEventDefinition): EventDetail {
+  const detail: EventDetail = { kind: toEventDefinitionKind(def.$type) };
   const timer = def.timeDuration?.body ?? def.timeDate?.body ?? def.timeCycle?.body;
   if (timer) detail.timer = timer;
   const reference =
@@ -65,7 +69,15 @@ function readEventDetail(defs: MdEventDefinition[] | undefined): EventDetail | u
   if (reference) detail.reference = reference;
   const code = def.errorRef?.errorCode ?? def.escalationRef?.escalationCode;
   if (code) detail.code = code;
+  if (def.condition?.body) detail.condition = def.condition.body;
+  if (def.activityRef?.id) detail.activityRef = def.activityRef.id;
   return detail;
+}
+
+/** Every definition of an event; `none` when it declares none. */
+function readEventDetails(defs: MdEventDefinition[] | undefined): EventDetail[] {
+  if (!defs || defs.length === 0) return [{ kind: 'none' }];
+  return defs.map(readEventDetail);
 }
 
 /**
@@ -135,6 +147,21 @@ function readLaneAssignments(lanes: MdLane[] | undefined, into: Map<string, stri
   }
 }
 
+/** `bpmn:Association` artifacts, which wire compensation handlers. */
+function readAssociations(artifacts: MdElement[] | undefined): Association[] {
+  const associations: Association[] = [];
+  for (const artifact of artifacts ?? []) {
+    if (!artifact.$type.endsWith(':Association')) continue;
+    if (!artifact.id || !artifact.sourceRef?.id || !artifact.targetRef?.id) continue;
+    associations.push({
+      id: artifact.id,
+      sourceRef: artifact.sourceRef.id,
+      targetRef: artifact.targetRef.id,
+    });
+  }
+  return associations;
+}
+
 interface ScopeAccumulator {
   nodes: FlowNode[];
   flows: SequenceFlow[];
@@ -152,28 +179,38 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
 
     const node: FlowNode = { id: el.id, kind, incoming: [], outgoing: [] };
     if (el.name) node.name = el.name;
-    if (isEventKind(kind)) node.event = readEventDetail(el.eventDefinitions);
+    if (isEventKind(kind)) {
+      const details = readEventDetails(el.eventDefinitions);
+      node.event = details[0];
+      node.events = details;
+    }
     if (kind === 'boundaryEvent') {
       if (el.attachedToRef?.id) node.attachedToRef = el.attachedToRef.id;
       node.cancelActivity = el.cancelActivity !== false;
     }
     if (el.default?.id) node.default = el.default.id;
+    if (el.activationCondition?.body) node.activationCondition = el.activationCondition.body;
     if (el.calledElement) node.calledElement = el.calledElement;
     const loop = readLoopCharacteristics(el.loopCharacteristics);
     if (loop) node.loop = loop;
     const candidates = readCandidates(el.resources);
     if (candidates.length > 0) node.candidates = candidates;
+    const message = el.messageRef?.name ?? el.messageRef?.id;
+    if (message) node.messageRef = message;
     if (el.triggeredByEvent) node.triggeredByEvent = true;
     if (kind === 'startEvent' && el.isInterrupting !== undefined) {
       node.interrupting = el.isInterrupting;
     }
+    if (el.isForCompensation) node.isForCompensation = true;
     if (el.flowElements && el.flowElements.length > 0) {
       const inner = readScope(el.flowElements);
+      const associations = readAssociations(el.artifacts);
       node.process = {
         id: el.id,
         isExecutable: true,
         flowNodes: inner.nodes,
         sequenceFlows: inner.flows,
+        ...(associations.length > 0 ? { associations } : {}),
       };
     }
     nodes.set(node.id, node);
@@ -218,11 +255,13 @@ function readProcess(el: MdElement): ProcessModel {
     if (lane) node.lane = lane;
   }
 
+  const associations = readAssociations(el.artifacts);
   const process: ProcessModel = {
     id: el.id ?? 'process',
     isExecutable: el.isExecutable !== false,
     flowNodes: scope.nodes,
     sequenceFlows: scope.flows,
+    ...(associations.length > 0 ? { associations } : {}),
   };
   if (el.name) process.name = el.name;
   return process;
