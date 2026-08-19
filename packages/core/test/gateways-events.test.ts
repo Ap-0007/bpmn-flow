@@ -14,42 +14,42 @@ describe('conditional event', () => {
     const eng = new WorkflowEngine(await process(CONDITIONAL_CATCH), {
       variables: { saldo: 20 },
     });
-    let snap = await eng.start();
+    const parked = await eng.start();
     // Both branches are parked: the user task and the conditional event.
-    expect(snap.tokens.filter((t) => t.waiting)).toHaveLength(2);
-    expect(snap.completedNodes).not.toContain('Liberar');
+    expect(parked.tokens.filter((t) => t.waiting)).toHaveLength(2);
+    expect(parked.completedNodes).not.toContain('Liberar');
 
     const deposit = eng.tasks({ nodeId: 'Depositar' })[0]!;
-    snap = await eng.completeTask(deposit.tokenId, { saldo: 150 });
+    const after = await eng.completeTask(deposit.tokenId, { saldo: 150 });
 
-    expect(snap.completedNodes).toContain('Liberar');
-    expect(snap.status).toBe('completed');
+    expect(after.completedNodes).toContain('Liberar');
+    expect(after.status).toBe('completed');
   });
 
   it('stays parked while the condition is false', async () => {
     const eng = new WorkflowEngine(await process(CONDITIONAL_CATCH), {
       variables: { saldo: 20 },
     });
-    let snap = await eng.start();
+    await eng.start();
     const deposit = eng.tasks({ nodeId: 'Depositar' })[0]!;
-    snap = await eng.completeTask(deposit.tokenId, { saldo: 30 });
+    const after = await eng.completeTask(deposit.tokenId, { saldo: 30 });
 
-    expect(snap.status).toBe('waiting');
-    expect(snap.tokens.filter((t) => t.waiting)).toHaveLength(1);
-    expect(snap.completedNodes).not.toContain('Liberar');
+    expect(after.status).toBe('waiting');
+    expect(after.tokens.filter((t) => t.waiting)).toHaveLength(1);
+    expect(after.completedNodes).not.toContain('Liberar');
   });
 });
 
 describe('complex gateway', () => {
   it('fires the join when the activation condition holds (quorum of 2)', async () => {
     const eng = new WorkflowEngine(await process(COMPLEX_GATEWAY));
-    let snap = await eng.start();
+    await eng.start();
     expect(eng.tasks()).toHaveLength(3);
 
-    snap = await eng.completeTask(eng.tasks({ nodeId: 'VotoA' })[0]!.tokenId);
-    expect(snap.completedNodes).not.toContain('Decidir');
+    const first = await eng.completeTask(eng.tasks({ nodeId: 'VotoA' })[0]!.tokenId);
+    expect(first.completedNodes).not.toContain('Decidir');
 
-    snap = await eng.completeTask(eng.tasks({ nodeId: 'VotoB' })[0]!.tokenId);
+    const snap = await eng.completeTask(eng.tasks({ nodeId: 'VotoB' })[0]!.tokenId);
     // Two of three arrived: quorum reached, the third is no longer required.
     expect(snap.completedNodes).toContain('Decidir');
   });
@@ -57,8 +57,7 @@ describe('complex gateway', () => {
 
 describe('an event with several definitions', () => {
   it('arms the timer and answers to the message name', async () => {
-    let now = T0;
-    const eng = new WorkflowEngine(await process(MULTI_EVENT_DEFINITIONS), { now: () => now });
+    const eng = new WorkflowEngine(await process(MULTI_EVENT_DEFINITIONS), { now: () => T0 });
     await eng.start();
     expect(eng.nextTimerAt()).toBe(T0 + 30 * 60_000);
 

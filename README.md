@@ -433,8 +433,14 @@ npm run format      # Prettier
 npm run dev         # sobe o playground em modo de desenvolvimento
 ```
 
-O CI roda `build`, `format:check`, `lint`, `typecheck` e `test` no Node 20 e 22
-(o build vem primeiro porque os pacotes se checam pelos tipos gerados).
+```bash
+npm run verify      # build + format + lint + typecheck + test, falhando no primeiro erro
+```
+
+`verify` é exatamente o que o CI roda, na mesma ordem — o build vem primeiro
+porque os pacotes se checam pelos tipos gerados uns dos outros, e os workspaces
+são compilados em ordem de dependência (`core` antes de quem o consome). O CI
+executa isso no Node 20 e 22.
 
 ### Publicando
 

@@ -18,7 +18,8 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @bpmn-flow/core && npm run build -w @bpmn-flow/viewer && npm run build -w @bpmn-flow/server && npm run build -w @bpmn-flow/cli && npm run build -w @bpmn-flow/playground",
+    "verify": "npm run build && npm run format:check && npm run lint && npm run typecheck && npm test",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
