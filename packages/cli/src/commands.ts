@@ -115,6 +115,15 @@ export async function run(xml: string, options: RunOptions = {}): Promise<RunRes
     lines.push('pending:');
     for (const task of tasks) lines.push(`  ${describeTask(task)}`);
   }
+  const incidents = engine.incidentList();
+  if (incidents.length > 0) {
+    lines.push('incidents:');
+    for (const incident of incidents) {
+      lines.push(
+        `  [${incident.tokenId}] ${incident.nodeId}: ${incident.message} (attempt ${incident.attempts})`,
+      );
+    }
+  }
   const timers = engine.dueTimers();
   if (timers.length > 0) {
     lines.push('timers:');

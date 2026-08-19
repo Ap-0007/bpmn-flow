@@ -161,3 +161,25 @@ describe('inbox across sessions', () => {
     expect(await store.inbox()).toHaveLength(0);
   });
 });
+
+const FAILING_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  targetNamespace="http://bpmn-flow.test" id="Defs">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:scriptTask id="Quebrar" name="Quebrar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Quebrar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Quebrar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+describe('incidents over sessions', () => {
+  it('has no incident when nothing fails', async () => {
+    const store = new SessionStore(new FileSessionStorage(dir));
+    const created = await store.create({ xml: FAILING_XML, onHandlerError: 'incident' });
+    // Without a registered handler the task passes through, so it completes.
+    expect(created.snapshot.status).toBe('completed');
+    expect(await store.incidents(created.id)).toHaveLength(0);
+  });
+});

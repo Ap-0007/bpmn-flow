@@ -6,7 +6,13 @@ export type ExecutionStatus =
 
 /** Why a token is parked, so callers know how to resume it. */
 export type WaitReason =
-  'userTask' | 'receiveTask' | 'catchEvent' | 'eventBasedGateway' | 'boundary';
+  | 'userTask'
+  | 'receiveTask'
+  | 'catchEvent'
+  | 'eventBasedGateway'
+  | 'boundary'
+  /** The activity's handler failed and the execution is holding, not dead. */
+  | 'incident';
 
 export interface TokenSnapshot {
   id: string;
@@ -86,6 +92,19 @@ export interface EngineOptions {
    * the process it references. Usually `model.processes`.
    */
   processes?: ProcessModel[];
+  /**
+   * What to do when an activity handler throws something other than a
+   * {@link BpmnError}: `fail` (default) stops the whole execution, `incident`
+   * parks the token so an operator can retry it.
+   */
+  onHandlerError?: 'fail' | 'incident';
+  /** Automatic retries before giving up on a failing handler. */
+  retry?: {
+    /** Extra attempts after the first failure. Defaults to 0. */
+    attempts?: number;
+    /** ISO-8601 wait between attempts (e.g. `PT30S`). Immediate when absent. */
+    delay?: string;
+  };
 }
 
 export interface EngineEvents extends Record<string, unknown> {

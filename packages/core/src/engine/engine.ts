@@ -15,6 +15,7 @@ import { BpmnError, HandlerRegistry, type TaskHandler } from './handlers.js';
 import {
   ENGINE_STATE_VERSION,
   type EngineState,
+  type IncidentState,
   type ScopeState,
   type TokenState,
   type TimerState,
@@ -107,6 +108,8 @@ export class WorkflowEngine {
   private readonly loops = new Map<string, LoopRun>();
   /** Completed activities that carry a compensation handler, in order. */
   private readonly compensations: { activityId: string; scopeId: string }[] = [];
+  /** Activities whose handler failed, keyed by token id. */
+  private readonly incidents = new Map<string, IncidentState>();
   /** Pending timers keyed by `tokenId:nodeId`. */
   private readonly timers = new Map<string, TimerState>();
   private readonly armedEvents = new Map<string, string>();
@@ -232,6 +235,47 @@ export class WorkflowEngine {
     return tasks;
   }
 
+  /** Activities whose handler failed and are holding, newest failure first. */
+  incidentList(): IncidentState[] {
+    return [...this.incidents.values()].filter((incident) => this.waiting.has(incident.tokenId));
+  }
+
+  /** Runs a failed activity again, from the incident it left behind. */
+  async retryTask(tokenId: string): Promise<ExecutionSnapshot> {
+    const token = this.waiting.get(tokenId);
+    if (!token || token.waiting !== 'incident') {
+      throw new BpmnExecutionError(`No incident for token: ${tokenId}`);
+    }
+    this.waiting.delete(tokenId);
+    token.waiting = undefined;
+    this.clearTimersFor(tokenId);
+    this.ready.push(token);
+    await this.drain();
+    return this.snapshot();
+  }
+
+  /**
+   * Gives up on the failing activity and moves on as if it had succeeded,
+   * optionally writing the output a human decided on.
+   */
+  async resolveIncident(
+    tokenId: string,
+    output?: Record<string, unknown>,
+  ): Promise<ExecutionSnapshot> {
+    const token = this.waiting.get(tokenId);
+    if (!token || token.waiting !== 'incident') {
+      throw new BpmnExecutionError(`No incident for token: ${tokenId}`);
+    }
+    if (output) this.assignVariables(token.scope, output);
+    this.waiting.delete(tokenId);
+    token.waiting = undefined;
+    this.incidents.delete(tokenId);
+    this.completeNode(token);
+    this.leaveViaOutgoing(token);
+    await this.drain();
+    return this.snapshot();
+  }
+
   /**
    * Timers waiting to fire, earliest first. A host can use the first due date
    * to decide when to call {@link tick} again.
@@ -240,9 +284,16 @@ export class WorkflowEngine {
     return [...this.timers.values()].sort((a, b) => a.dueAt - b.dueAt);
   }
 
-  /** Epoch milliseconds of the next timer, or `undefined` when there is none. */
+  /**
+   * Epoch milliseconds of the next thing that fires on its own — a timer or a
+   * scheduled retry — or `undefined` when nothing is pending.
+   */
   nextTimerAt(): number | undefined {
-    return this.dueTimers()[0]?.dueAt;
+    const retries = this.incidentList()
+      .map((incident) => incident.retryAt)
+      .filter((at): at is number => at !== undefined);
+    const due = [...this.dueTimers().map((timer) => timer.dueAt), ...retries];
+    return due.length > 0 ? Math.min(...due) : undefined;
   }
 
   /**
@@ -255,6 +306,18 @@ export class WorkflowEngine {
       if (entry.dueAt > now) break;
       if (!this.timers.has(timerKey(entry.tokenId, entry.nodeId))) continue;
       if (this.fireTimer(entry)) fired = true;
+    }
+    // Scheduled retries are due dates too.
+    for (const incident of [...this.incidents.values()]) {
+      if (incident.retryAt === undefined || incident.retryAt > now) continue;
+      const token = this.waiting.get(incident.tokenId);
+      if (!token || token.waiting !== 'incident') continue;
+      this.waiting.delete(token.id);
+      token.waiting = undefined;
+      const { retryAt: _scheduled, ...pending } = incident;
+      this.incidents.set(incident.tokenId, pending);
+      this.ready.push(token);
+      fired = true;
     }
     if (fired) await this.drain();
     return this.snapshot();
@@ -356,6 +419,7 @@ export class WorkflowEngine {
       armedEvents: [...this.armedEvents],
       timers: [...this.timers.values()].map((timer) => ({ ...timer })),
       compensations: this.compensations.map((entry) => ({ ...entry })),
+      incidents: this.incidentList().map((incident) => ({ ...incident })),
       loops: [...this.loops.values()].map((run) => ({
         id: run.id,
         nodeId: run.nodeId,
@@ -504,6 +568,8 @@ export class WorkflowEngine {
       this.timers.set(timerKey(timer.tokenId, timer.nodeId), { ...timer });
     }
     for (const entry of state.compensations ?? []) this.compensations.push({ ...entry });
+    for (const incident of state.incidents ?? [])
+      this.incidents.set(incident.tokenId, { ...incident });
 
     for (const stored of state.loops) {
       const scope = scopesById.get(stored.scopeId);
@@ -933,12 +999,53 @@ export class WorkflowEngine {
         this.fail(error);
         return;
       }
-      this.fail(error instanceof Error ? error : new Error(String(error)));
+      this.handleFailure(token, node, error instanceof Error ? error : new Error(String(error)));
       return;
     }
+    this.incidents.delete(token.id);
     this.emitter.emit('activity.end', { nodeId: node.id, tokenId: token.id });
     this.completeNode(token);
     this.leaveViaOutgoing(token);
+  }
+
+  /**
+   * A handler threw something that is not a business error: retry it, hold it
+   * as an incident, or fail the execution — depending on the options.
+   */
+  private handleFailure(token: RuntimeToken, node: FlowNode, error: Error): void {
+    const attempts = (this.incidents.get(token.id)?.attempts ?? 0) + 1;
+    const allowed = this.options.retry?.attempts ?? 0;
+    const incident: IncidentState = {
+      tokenId: token.id,
+      nodeId: node.id,
+      scopeId: token.scope.id,
+      message: error.message,
+      attempts,
+    };
+
+    if (attempts <= allowed) {
+      const delay = this.options.retry?.delay;
+      const retryAt = delay ? resolveTimerDueAt(delay, this.now()) : undefined;
+      if (retryAt === undefined) {
+        // Retry right away: back to the queue, the step guard bounds the loop.
+        this.incidents.set(token.id, incident);
+        this.ready.push(token);
+        return;
+      }
+      this.incidents.set(token.id, { ...incident, retryAt });
+      this.park(token, 'incident');
+      this.emitter.emit('error', { nodeId: node.id, error });
+      return;
+    }
+
+    if ((this.options.onHandlerError ?? 'fail') === 'incident') {
+      this.incidents.set(token.id, incident);
+      this.park(token, 'incident');
+      this.emitter.emit('error', { nodeId: node.id, error });
+      return;
+    }
+    this.incidents.delete(token.id);
+    this.fail(error);
   }
 
   /**

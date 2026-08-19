@@ -91,6 +91,23 @@ export function createApp(options: AppOptions = {}): Hono {
     c.json(await sessions.tasks(c.req.param('id'), taskFilter(c.req.query()))),
   );
 
+  app.get('/api/sessions/:id/incidents', async (c) =>
+    c.json(await sessions.incidents(c.req.param('id'))),
+  );
+
+  app.post('/api/sessions/:id/incidents/:tokenId/retry', async (c) =>
+    c.json(await sessions.retry(c.req.param('id'), c.req.param('tokenId'))),
+  );
+
+  app.post('/api/sessions/:id/incidents/:tokenId/resolve', async (c) => {
+    const { output } = await c.req
+      .json<{ output?: Record<string, unknown> }>()
+      .catch(() => ({}) as { output?: Record<string, unknown> });
+    return c.json(
+      await sessions.resolveIncident(c.req.param('id'), c.req.param('tokenId'), output),
+    );
+  });
+
   app.post('/api/sessions/:id/tick', async (c) => {
     const body = await c.req.json<{ now?: number }>().catch(() => ({}) as { now?: number });
     return c.json(await sessions.tick(c.req.param('id'), body.now));

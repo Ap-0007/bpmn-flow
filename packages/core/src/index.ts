@@ -11,6 +11,7 @@ export type {
   CompensationState,
   EngineState,
   EventChoiceState,
+  IncidentState,
   LoopRunState,
   InclusiveBufferState,
   ParallelBufferState,

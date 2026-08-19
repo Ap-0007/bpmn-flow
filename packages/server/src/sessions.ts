@@ -3,8 +3,10 @@ import {
   parseBpmn,
   WorkflowEngine,
   type EngineMode,
+  type EngineOptions,
   type ExecutionSnapshot,
   type ExecutionStatus,
+  type IncidentState,
   type PendingTask,
   type ProcessModel,
   type TaskFilter,
@@ -15,6 +17,10 @@ export interface CreateSessionInput {
   xml: string;
   mode?: EngineMode;
   variables?: Record<string, unknown>;
+  /** `incident` holds a failing activity instead of failing the execution. */
+  onHandlerError?: EngineOptions['onHandlerError'];
+  /** Automatic retries before an incident is opened. */
+  retry?: EngineOptions['retry'];
 }
 
 export interface Session {
@@ -61,6 +67,8 @@ export class SessionStore {
       processes,
       ...(input.mode ? { mode: input.mode } : {}),
       ...(input.variables ? { variables: input.variables } : {}),
+      ...(input.onHandlerError ? { onHandlerError: input.onHandlerError } : {}),
+      ...(input.retry ? { retry: input.retry } : {}),
     });
     const snapshot = await engine.start();
     const session: LiveSession = { id: randomUUID(), xml: input.xml, snapshot, engine };
@@ -107,6 +115,32 @@ export class SessionStore {
       for (const task of session.engine.tasks(filter)) inbox.push({ sessionId: id, ...task });
     }
     return inbox;
+  }
+
+  /** Activities of one session whose handler failed. */
+  async incidents(id: string): Promise<IncidentState[]> {
+    const session = await this.require(id);
+    return session.engine.incidentList();
+  }
+
+  /** Runs a failed activity again. */
+  async retry(id: string, tokenId: string): Promise<Session> {
+    const session = await this.require(id);
+    session.snapshot = await session.engine.retryTask(tokenId);
+    await this.persist(session);
+    return view(session);
+  }
+
+  /** Gives up on a failed activity and moves the process on. */
+  async resolveIncident(
+    id: string,
+    tokenId: string,
+    output?: Record<string, unknown>,
+  ): Promise<Session> {
+    const session = await this.require(id);
+    session.snapshot = await session.engine.resolveIncident(tokenId, output);
+    await this.persist(session);
+    return view(session);
   }
 
   /** Fires the timers of one session that are due at `now`. */
