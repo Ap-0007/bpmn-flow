@@ -97,6 +97,8 @@ export interface MdElement {
 
   // activities: who is expected to perform the work
   resources?: MdResourceRole[];
+  /** Receive/send tasks: the message they wait for or emit. */
+  messageRef?: MdRef & { name?: string };
 
   // process: swimlanes
   laneSets?: { lanes?: MdLane[] }[];

@@ -895,6 +895,9 @@ export class WorkflowEngine {
         if (detailOfKind(node, 'link') && this.followLink(token, node)) return;
         const compensation = detailOfKind(node, 'compensation');
         if (compensation) await this.compensate(token.scope, compensation.activityRef);
+        const escalation = detailOfKind(node, 'escalation');
+        // An escalation is a shout for help: the branch carries on either way.
+        if (escalation) this.raiseEscalation(token.scope, escalation.code ?? escalation.reference);
         this.completeNode(token);
         this.leaveViaOutgoing(token);
         return;
@@ -946,6 +949,13 @@ export class WorkflowEngine {
     }
     if (kind === 'cancel') {
       await this.cancelTransaction(token);
+      return;
+    }
+    if (kind === 'escalation') {
+      this.discard(token);
+      const detail = node.event;
+      this.raiseEscalation(token.scope, detail?.code ?? detail?.reference);
+      this.checkScopeCompletion(token.scope);
       return;
     }
     if (kind === 'error') {
@@ -1542,9 +1552,9 @@ export class WorkflowEngine {
   private deliverSignal(nameOrId: string): boolean {
     let delivered = false;
 
-    // 1. Parked catch events (match by node id or event reference).
+    // 1. Parked catch events and receive tasks (by node id or event reference).
     const parked = [...this.waiting.values()].filter((token) => {
-      if (token.waiting !== 'catchEvent') return false;
+      if (token.waiting !== 'catchEvent' && token.waiting !== 'receiveTask') return false;
       const node = token.scope.graph.node(token.nodeId);
       return node ? matchesTrigger(node, nameOrId) : false;
     });
@@ -1646,6 +1656,30 @@ export class WorkflowEngine {
       }
     }
     return false;
+  }
+
+  /**
+   * Escalation travels outwards: it looks for an escalation boundary event on
+   * the activity that hosts this scope, then for an escalation event
+   * subprocess. Unlike an error, an unhandled escalation is not a failure.
+   */
+  private raiseEscalation(scope: Scope, code?: string): boolean {
+    for (let current: Scope | undefined = scope; current; current = current.parentScope) {
+      const hostId = current.hostNodeId;
+      const parentScope = current.parentToken?.scope ?? current.parentScope;
+      if (!hostId || !parentScope) continue;
+      const boundary = parentScope.graph.boundaryEvents(hostId).find((candidate) => {
+        const detail = detailOfKind(candidate, 'escalation');
+        if (!detail) return false;
+        return !code || !detail.code || detail.code === code;
+      });
+      if (boundary && this.fireBoundary(parentScope, boundary)) return true;
+    }
+    return this.startEventSubProcesses((start) => {
+      const detail = detailOfKind(start, 'escalation');
+      if (!detail) return false;
+      return !code || !detail.code || detail.code === code;
+    });
   }
 
   /** True when an event subprocess with a matching error start event ran. */
@@ -1915,9 +1949,13 @@ function detailsOf(node: FlowNode): EventDetail[] {
   return node.events ?? (node.event ? [node.event] : []);
 }
 
-/** A trigger matches a node by its id or by any referenced event name. */
+/** A trigger matches a node by its id, its message, or any event reference. */
 function matchesTrigger(node: FlowNode, nameOrId: string): boolean {
-  return node.id === nameOrId || detailsOf(node).some((detail) => detail.reference === nameOrId);
+  return (
+    node.id === nameOrId ||
+    node.messageRef === nameOrId ||
+    detailsOf(node).some((detail) => detail.reference === nameOrId)
+  );
 }
 
 /** First definition of a given kind, when the node declares one. */

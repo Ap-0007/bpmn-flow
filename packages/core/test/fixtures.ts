@@ -696,3 +696,48 @@ export const TRANSACTION_CANCEL = wrap(`
     <bpmn:sequenceFlow id="f2" sourceRef="Concluir" targetRef="End" />
     <bpmn:sequenceFlow id="fb" sourceRef="TxCancelada" targetRef="AvisarCliente" />
     <bpmn:sequenceFlow id="fb2" sourceRef="AvisarCliente" targetRef="EndCancelado" />`);
+
+export const ESCALATION = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:escalation id="Esc" name="ValorAlto" escalationCode="VALOR_ALTO" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:subProcess id="Analise" name="Análise">
+      <bpmn:startEvent id="SubStart" />
+      <bpmn:serviceTask id="Avaliar" name="Avaliar" />
+      <bpmn:intermediateThrowEvent id="Escalar">
+        <bpmn:escalationEventDefinition escalationRef="Esc" />
+      </bpmn:intermediateThrowEvent>
+      <bpmn:endEvent id="SubEnd" />
+      <bpmn:sequenceFlow id="s0" sourceRef="SubStart" targetRef="Avaliar" />
+      <bpmn:sequenceFlow id="s1" sourceRef="Avaliar" targetRef="Escalar" />
+      <bpmn:sequenceFlow id="s2" sourceRef="Escalar" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="OnEscalation" attachedToRef="Analise" cancelActivity="false">
+      <bpmn:escalationEventDefinition escalationRef="Esc" />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="AvisarDiretoria" name="Avisar diretoria" />
+    <bpmn:task id="Continuar" />
+    <bpmn:endEvent id="EndAviso" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Analise" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Analise" targetRef="Continuar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Continuar" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="OnEscalation" targetRef="AvisarDiretoria" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="AvisarDiretoria" targetRef="EndAviso" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const RECEIVE_TASK = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:message id="Msg" name="PagamentoConfirmado" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:receiveTask id="AguardarPagamento" name="Aguardar pagamento" messageRef="Msg" />
+    <bpmn:task id="Enviar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="AguardarPagamento" />
+    <bpmn:sequenceFlow id="f1" sourceRef="AguardarPagamento" targetRef="Enviar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Enviar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;

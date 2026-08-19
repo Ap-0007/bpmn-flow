@@ -99,6 +99,9 @@ export interface FlowNode {
   /** Activity that only runs as a compensation handler, never in normal flow. */
   isForCompensation?: boolean;
 
+  /** Receive/send tasks: name of the message they wait for or emit. */
+  messageRef?: string;
+
   /** Sub-processes: id of a called global process (call activity). */
   calledElement?: string;
   /** Event sub-processes are triggered by their start event, not by a token. */

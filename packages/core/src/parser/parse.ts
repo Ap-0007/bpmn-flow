@@ -195,6 +195,8 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
     if (loop) node.loop = loop;
     const candidates = readCandidates(el.resources);
     if (candidates.length > 0) node.candidates = candidates;
+    const message = el.messageRef?.name ?? el.messageRef?.id;
+    if (message) node.messageRef = message;
     if (el.triggeredByEvent) node.triggeredByEvent = true;
     if (kind === 'startEvent' && el.isInterrupting !== undefined) {
       node.interrupting = el.isInterrupting;
