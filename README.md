@@ -206,6 +206,25 @@ while ((frame = replay.next())) viewer.applyReplayFrame(frame);
 
 ![Tempo médio por atividade sobreposto ao diagrama](docs/media/metricas-por-atividade.png)
 
+## O diagrama diz quais variáveis ele precisa
+
+Um gateway com `pago === true` só abre com essa variável — e quem abre o
+processo pela primeira vez não tem como adivinhar. O core lê as expressões do
+próprio diagrama e responde:
+
+```ts
+processVariables(process);
+// [{ name: 'pago', kind: 'condition', expressions: ['pago === true'],
+//    usedBy: ['Pagamento aprovado?'], suggestion: true }]
+
+suggestVariables(process); // { pago: true, valor: 1001 }
+```
+
+A sugestão sai da forma da expressão (`valor > 1000` sugere 1001, `status ===
+"ok"` sugere `"ok"`, uma coleção de multi-instância sugere dois itens). O
+playground usa isso para já abrir a caixa de variáveis preenchida com algo que
+faz o processo andar, e lista cada variável com a expressão que a consome.
+
 ## Timers
 
 Eventos de timer viram data de vencimento. O motor não tem relógio próprio: ele
@@ -394,8 +413,13 @@ modo que reiniciar o servidor não perde execuções em andamento.
 - Sinais são **difundidos**: um `signal()` acorda todos os assinantes, inclusive
   receive tasks que esperam aquela mensagem.
 - Atividades: task, userTask, serviceTask, scriptTask, businessRuleTask,
-  sendTask, receiveTask, manualTask, subprocessos embutidos, **transaction** e
+  sendTask, receiveTask, manualTask, subprocessos embutidos, **transaction**,
+  **adHocSubProcess** (paralelo ou sequencial, com condição de conclusão) e
   **callActivity executando o processo referenciado**.
+- **Mapeamento de dados** de entrada e saída, que isola o processo chamado: ele
+  só enxerga o que foi mapeado, e só o mapeamento de saída volta.
+- Eventos de lançamento **entregam o gatilho** (sinal, mensagem, escalation,
+  compensação) para os assinantes do próprio processo.
 - Gateways: exclusivo (com fluxo default), paralelo (junção sincronizada),
   inclusivo (junção por alcançabilidade), baseado em evento e **complexo com
   condição de ativação** (quórum).
@@ -408,15 +432,13 @@ modo que reiniciar o servidor não perde execuções em andamento.
 
 ## Limitações conhecidas
 
-- **Ciclos de timer disparam uma vez**: `R3/PT10M` é lido como um intervalo de
-  10 minutos, sem repetição.
+- **Ciclos de timer repetem só em evento de borda não interrompente**
+  (`R3/PT1H` = três lembretes), que é onde repetir faz sentido.
 - **Expressões de condição são avaliadas como JavaScript** sobre as variáveis do
   processo, assumindo que a definição do diagrama é confiável. Variável
   inexistente lê como `undefined`; expressão que lança é tratada como `false`.
-- **Evento de borda condicional não é auto-avaliado** (o de captura é): dispare-o
-  por `signal()` pelo id.
-- **Mapeamento de dados** (`ioSpecification`, data associations de entrada/saída
-  em call activity) não é executado: o escopo filho enxerga as variáveis do pai.
+- **`ioSpecification` formal não é interpretado**: o mapeamento de dados é lido
+  na forma `assignment/from/to`.
 - **Correlação de mensagem por chave** não existe; a entrega é por nome da
   mensagem ou id do elemento.
 - **DMN está fora de escopo**: `businessRuleTask` é o ponto de extensão — ligue

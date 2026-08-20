@@ -20,7 +20,7 @@ import {
   type TokenState,
   type TimerState,
 } from './state.js';
-import { resolveTimerDueAt } from './timers.js';
+import { parseTimerCycle, resolveTimerDueAt } from './timers.js';
 import type {
   ActivityMetrics,
   EngineEvents,
@@ -48,6 +48,12 @@ interface Scope {
   variables: Record<string, unknown>;
   /** Set on scopes created for one instance of a loop/multi-instance activity. */
   loopId?: string;
+  /** Data-mapped scopes do not read the caller's variables. */
+  isolated?: boolean;
+  /** Ad-hoc subprocess: activities not started yet. */
+  adHocPending?: string[];
+  /** Ad-hoc subprocess: expression that ends it early. */
+  completionCondition?: string;
   tokens: Set<RuntimeToken>;
 }
 
@@ -111,6 +117,8 @@ export class WorkflowEngine {
   private readonly compensations: { activityId: string; scopeId: string }[] = [];
   /** Activities whose handler failed, keyed by token id. */
   private readonly incidents = new Map<string, IncidentState>();
+  /** `boundaryId:hostTokenId` of conditional boundaries already fired. */
+  private readonly firedConditionals = new Set<string>();
   /** Pending timers keyed by `tokenId:nodeId`. */
   private readonly timers = new Map<string, TimerState>();
   private readonly armedEvents = new Map<string, string>();
@@ -451,6 +459,8 @@ export class WorkflowEngine {
         ...(scope.hostNodeId ? { hostNodeId: scope.hostNodeId } : {}),
         ...(scope.parentToken ? { parentTokenId: scope.parentToken.id } : {}),
         ...(scope.loopId ? { loopId: scope.loopId } : {}),
+        ...(scope.isolated ? { isolated: true } : {}),
+        ...(scope.adHocPending ? { adHocPending: [...scope.adHocPending] } : {}),
         variables: { ...scope.variables },
       })),
       tokens: [...tokens.values()],
@@ -554,10 +564,17 @@ export class WorkflowEngine {
         tokens: new Set(),
         variables: { ...stored.variables },
         ...(stored.parentScopeId ? { parentScopeId: stored.parentScopeId } : {}),
-        ...(parentScope ? { parentScope } : {}),
+        // An isolated scope keeps its own data: no variable chain to the caller.
+        ...(parentScope && !stored.isolated ? { parentScope } : {}),
         ...(stored.hostNodeId ? { hostNodeId: stored.hostNodeId } : {}),
         ...(stored.loopId ? { loopId: stored.loopId } : {}),
+        ...(stored.isolated ? { isolated: true } : {}),
+        ...(stored.adHocPending ? { adHocPending: [...stored.adHocPending] } : {}),
       };
+      // The completion condition lives on the host node, so it is re-derived.
+      const host =
+        parentScope && stored.hostNodeId ? parentScope.graph.node(stored.hostNodeId) : undefined;
+      if (host?.completionCondition) scope.completionCondition = host.completionCondition;
       scopesById.set(scope.id, scope);
       this.scopes.push(scope);
     }
@@ -703,6 +720,9 @@ export class WorkflowEngine {
     token.scope.tokens.delete(token);
     this.waiting.delete(token.id);
     this.clearTimersFor(token.id);
+    for (const key of [...this.firedConditionals]) {
+      if (key.endsWith(`:${token.id}`)) this.firedConditionals.delete(key);
+    }
     // A discarded token must never be processed again, even if it was already
     // queued — cancellation (terminate, interrupting boundary) relies on this.
     const queued = this.ready.indexOf(token);
@@ -770,6 +790,7 @@ export class WorkflowEngine {
     if (!definition) return;
     const dueAt = resolveTimerDueAt(definition, this.now());
     if (dueAt === undefined) return;
+    const cycle = parseTimerCycle(definition);
     this.timers.set(timerKey(token.id, node.id), {
       tokenId: token.id,
       nodeId: node.id,
@@ -777,6 +798,23 @@ export class WorkflowEngine {
       kind,
       dueAt,
       definition,
+      // A cycle keeps firing while the activity it guards is still running.
+      ...(cycle ? { repetitions: cycle.repetitions } : {}),
+    });
+  }
+
+  /** Schedules the next firing of a repeating boundary timer, if any is left. */
+  private rearmCycle(entry: TimerState, node: FlowNode): void {
+    const cycle = parseTimerCycle(entry.definition);
+    if (!cycle) return;
+    const remaining = entry.repetitions === null ? null : (entry.repetitions ?? 1) - 1;
+    if (remaining !== null && remaining <= 0) return;
+    const dueAt = resolveTimerDueAt(cycle.interval, this.now());
+    if (dueAt === undefined) return;
+    this.timers.set(timerKey(entry.tokenId, node.id), {
+      ...entry,
+      dueAt,
+      ...(remaining === null ? { repetitions: null } : { repetitions: remaining }),
     });
   }
 
@@ -794,7 +832,10 @@ export class WorkflowEngine {
       const scope = this.scopes.find((s) => s.id === entry.scopeId);
       const boundary = scope?.graph.node(entry.nodeId);
       if (!scope || !boundary) return false;
-      return this.fireBoundary(scope, boundary);
+      const fired = this.fireBoundary(scope, boundary);
+      // A cyclic, non-interrupting boundary rearms for its next firing.
+      if (fired && boundary.cancelActivity === false) this.rearmCycle(entry, boundary);
+      return fired;
     }
 
     const token = this.waiting.get(entry.tokenId);
@@ -825,14 +866,19 @@ export class WorkflowEngine {
    * `setLocal` in a handler to keep a value inside the current scope.
    */
   private writeVariable(scope: Scope | undefined, name: string, value: unknown): void {
+    let outermost: Scope | undefined;
     for (let current = scope; current; current = current.parentScope) {
       if (Object.hasOwn(current.variables, name)) {
         current.variables[name] = value;
         return;
       }
+      outermost = current;
     }
-    const root = this.scopes[0];
-    if (root) root.variables[name] = value;
+    // A new variable lands on the outermost scope the activity can see. For an
+    // isolated scope (data-mapped call activity) that is the scope itself, so
+    // its data never leaks into the caller.
+    const target = outermost ?? this.scopes[0];
+    if (target) target.variables[name] = value;
     else this.initialVariables[name] = value;
   }
 
@@ -908,6 +954,8 @@ export class WorkflowEngine {
       if (this.fireReadyInclusiveJoins()) continue;
       // A conditional event fires as soon as its condition holds.
       if (this.fireReadyConditionalEvents()) continue;
+      // An ad-hoc subprocess may declare itself done before running everything.
+      if (this.finishSatisfiedAdHocScopes()) continue;
       // Auto mode resolves the next wait to keep the simulation moving.
       if (this.mode === 'auto' && this.autoResolveWait()) continue;
       break;
@@ -946,6 +994,7 @@ export class WorkflowEngine {
         const escalation = detailOfKind(node, 'escalation');
         // An escalation is a shout for help: the branch carries on either way.
         if (escalation) this.raiseEscalation(token.scope, escalation.code ?? escalation.reference);
+        this.throwTrigger(node);
         this.completeNode(token);
         this.leaveViaOutgoing(token);
         return;
@@ -1006,6 +1055,8 @@ export class WorkflowEngine {
       this.checkScopeCompletion(token.scope);
       return;
     }
+    // An end event may also throw a signal or a message on its way out.
+    this.throwTrigger(node);
     if (kind === 'error') {
       this.discard(token);
       const code = node.event?.code ?? node.event?.reference;
@@ -1131,6 +1182,13 @@ export class WorkflowEngine {
     this.armBoundaryTimers(token);
     const childGraph = new ProcessGraph(called);
     const child = this.createScope(childGraph, token, node.id);
+    this.applyDataInput(node, token.scope, child);
+
+    if (node.kind === 'adHocSubProcess') {
+      this.startAdHoc(child, node, childGraph);
+      return;
+    }
+
     const starts = childGraph.startNodes().filter((s) => !s.event || s.event.kind === 'none');
     if (starts.length === 0) {
       // No plain start: complete immediately.
@@ -1140,9 +1198,57 @@ export class WorkflowEngine {
     for (const start of starts) this.spawn(child, start.id);
   }
 
+  /**
+   * Ad-hoc subprocess: its activities have no sequence flow telling them when
+   * to run. Every activity without an incoming flow is eligible; `ordering`
+   * decides whether they run together or one at a time, and a
+   * `completionCondition` can end the scope before all of them ran.
+   */
+  private startAdHoc(scope: Scope, node: FlowNode, graph: ProcessGraph): void {
+    const activities = graph
+      .allNodes()
+      .filter((candidate) => isActivityKind(candidate.kind) && candidate.incoming.length === 0);
+    if (activities.length === 0) {
+      this.finishSubProcess(scope);
+      return;
+    }
+    if (node.completionCondition) scope.completionCondition = node.completionCondition;
+
+    if (node.sequential) {
+      scope.adHocPending = activities.slice(1).map((activity) => activity.id);
+      this.spawn(scope, activities[0]!.id);
+      return;
+    }
+    scope.adHocPending = [];
+    for (const activity of activities) this.spawn(scope, activity.id);
+  }
+
+  /** Copies the caller's values into the activity's scope, isolating it. */
+  private applyDataInput(node: FlowNode, from: Scope, into: Scope): void {
+    if (!node.dataInput || node.dataInput.length === 0) return;
+    const source = this.mergedVariables(from);
+    for (const mapping of node.dataInput) {
+      into.variables[mapping.to] = evaluateExpression(mapping.from, source);
+    }
+    // Declaring a mapping means the activity works with its own data only.
+    delete into.parentScope;
+    into.isolated = true;
+  }
+
+  /** Copies the activity's results back to the caller. */
+  private applyDataOutput(node: FlowNode, from: Scope, into: Scope): void {
+    if (!node.dataOutput || node.dataOutput.length === 0) return;
+    const source = this.mergedVariables(from);
+    for (const mapping of node.dataOutput) {
+      this.writeVariable(into, mapping.to, evaluateExpression(mapping.from, source));
+    }
+  }
+
   private finishSubProcess(child: Scope): void {
     const parent = child.parentToken;
     const hostId = child.hostNodeId;
+    const host = hostId ? parent?.scope.graph.node(hostId) : undefined;
+    if (host && parent) this.applyDataOutput(host, child, parent.scope);
     this.scopes.splice(this.scopes.indexOf(child), 1);
     if (!parent || !hostId) return;
     parent.scope.tokens.add(parent);
@@ -1707,6 +1813,19 @@ export class WorkflowEngine {
   }
 
   /**
+   * A throw event with a signal or message definition delivers it, so catch
+   * events, boundary events and event subprocesses listening for that name
+   * react — the same broadcast an external `signal()` performs.
+   */
+  private throwTrigger(node: FlowNode): void {
+    for (const detail of detailsOf(node)) {
+      if (detail.kind !== 'signal' && detail.kind !== 'message') continue;
+      const name = detail.reference ?? node.messageRef;
+      if (name) this.deliverSignal(name);
+    }
+  }
+
+  /**
    * Escalation travels outwards: it looks for an escalation boundary event on
    * the activity that hosts this scope, then for an escalation event
    * subprocess. Unlike an error, an unhandled escalation is not a failure.
@@ -1856,6 +1975,40 @@ export class WorkflowEngine {
       this.leaveViaOutgoing(token);
       return true;
     }
+    return this.fireReadyConditionalBoundaries();
+  }
+
+  /**
+   * A conditional boundary event watches the variables while its activity runs.
+   * Each activation fires once, so a non-interrupting one does not loop.
+   */
+  private fireReadyConditionalBoundaries(): boolean {
+    for (const token of [...this.waiting.values()]) {
+      const scope = token.scope;
+      for (const boundary of scope.graph.boundaryEvents(token.nodeId)) {
+        const condition = detailOfKind(boundary, 'conditional')?.condition;
+        if (!condition) continue;
+        const key = `${boundary.id}:${token.id}`;
+        if (this.firedConditionals.has(key)) continue;
+        if (!evaluateCondition(condition, this.mergedVariables(scope))) continue;
+        this.firedConditionals.add(key);
+        if (this.fireBoundary(scope, boundary)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** Ends ad-hoc scopes whose completion condition already holds. */
+  private finishSatisfiedAdHocScopes(): boolean {
+    for (const scope of [...this.scopes]) {
+      if (!scope.completionCondition) continue;
+      if (!evaluateCondition(scope.completionCondition, this.mergedVariables(scope))) continue;
+      for (const token of [...scope.tokens]) this.discard(token);
+      scope.adHocPending = [];
+      delete scope.completionCondition;
+      this.finishSubProcess(scope);
+      return true;
+    }
     return false;
   }
 
@@ -1918,6 +2071,12 @@ export class WorkflowEngine {
   private checkScopeCompletion(scope: Scope): void {
     if (scope.tokens.size > 0) return;
     if (this.hasPendingFor(scope)) return;
+    // Ad-hoc, one at a time: the next activity only starts now.
+    const next = scope.adHocPending?.shift();
+    if (next !== undefined) {
+      this.spawn(scope, next);
+      return;
+    }
     if (scope.parentToken) {
       this.finishSubProcess(scope);
       return;

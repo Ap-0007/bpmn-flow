@@ -102,6 +102,19 @@ export interface FlowNode {
   /** Receive/send tasks: name of the message they wait for or emit. */
   messageRef?: string;
 
+  /** Ad-hoc subprocess: expression that ends it before every activity ran. */
+  completionCondition?: string;
+  /** Ad-hoc subprocess: whether its activities run one at a time. */
+  sequential?: boolean;
+
+  /**
+   * Values copied into the activity's scope when it starts. Declaring any of
+   * them isolates the scope: it stops seeing the caller's variables.
+   */
+  dataInput?: DataMapping[];
+  /** Values copied back to the caller when the activity completes. */
+  dataOutput?: DataMapping[];
+
   /** Sub-processes: id of a called global process (call activity). */
   calledElement?: string;
   /** Event sub-processes are triggered by their start event, not by a token. */
@@ -135,6 +148,15 @@ export interface Association {
   id: string;
   sourceRef: string;
   targetRef: string;
+}
+
+/**
+ * One assignment of a data association: read `from` in the source scope, write
+ * the result to `to` in the target scope.
+ */
+export interface DataMapping {
+  from: string;
+  to: string;
 }
 
 /** A participant (pool) in a collaboration. */
