@@ -7,6 +7,7 @@ import {
   type EngineMode,
   type ExecutionSnapshot,
   type FlowNode,
+  type HistoryEntry,
   type PendingTask,
   type TokenSnapshot,
   type VariableUsage,
@@ -138,10 +139,7 @@ async function loadDiagram(xml: string): Promise<void> {
   renderVariableHints();
   await viewer.load(xml);
   teardownEngine();
-  if (replayTimer !== undefined) {
-    window.clearInterval(replayTimer);
-    replayTimer = undefined;
-  }
+  stopAnimation();
   metricsShown = false;
   els.log.replaceChildren();
   els.actions.replaceChildren();
@@ -336,25 +334,55 @@ function renderTimers(): void {
   els.timers.append(button);
 }
 
-/** Reprisa a execução passo a passo a partir do histórico. */
-function replayRun(): void {
-  if (!engine || replayTimer !== undefined) return;
-  const replay = new ExecutionReplay(engine.snapshot().history);
-  if (replay.length === 0) return;
+/**
+ * Executa o processo e mostra o caminho passo a passo no diagrama. Se já houver
+ * uma execução em andamento, reprisa o que aconteceu até aqui; clicar de novo
+ * durante a animação interrompe.
+ */
+async function runAndAnimate(): Promise<void> {
+  if (replayTimer !== undefined) {
+    stopAnimation();
+    return;
+  }
+  try {
+    if (!engine) {
+      engine = newEngine('auto', readVariables());
+      render(await engine.start());
+    }
+    animate(engine.snapshot().history);
+  } catch (error) {
+    fail(error);
+  }
+}
+
+/** Percorre o histórico quadro a quadro sobre o diagrama. */
+function animate(history: HistoryEntry[]): void {
+  const replay = new ExecutionReplay(history);
+  if (replay.length === 0) {
+    els.status.textContent = 'Nada para mostrar: o processo não executou nenhum passo.';
+    return;
+  }
+  els.replay.textContent = 'Parar';
   viewer.clear();
   replayTimer = window.setInterval(() => {
     const frame = replay.next();
     if (!frame) {
-      window.clearInterval(replayTimer);
-      replayTimer = undefined;
-      if (engine) render(engine.snapshot());
+      stopAnimation();
       return;
     }
     viewer.applyReplayFrame(frame);
-    els.status.textContent = `Replay ${frame.index + 1}/${replay.length}: ${label(
+    els.status.textContent = `Passo ${frame.index + 1}/${replay.length}: ${label(
       frame.entry.nodeId,
     )} (${frame.entry.event})`;
   }, 400);
+}
+
+/** Encerra a animação e devolve o diagrama ao estado real da execução. */
+function stopAnimation(): void {
+  if (replayTimer !== undefined) window.clearInterval(replayTimer);
+  replayTimer = undefined;
+  els.replay.textContent = 'Run';
+  if (engine) render(engine.snapshot());
 }
 
 /** Liga/desliga as etiquetas de tempo médio por atividade. */
@@ -525,7 +553,7 @@ els.reset.addEventListener('click', () => {
   if (currentXml) void loadDiagram(currentXml);
 });
 els.fit.addEventListener('click', () => viewer.fit());
-els.replay.addEventListener('click', () => replayRun());
+els.replay.addEventListener('click', () => void runAndAnimate());
 els.panelToggle.addEventListener('click', () => togglePanel());
 els.metrics.addEventListener('click', () => toggleMetrics());
 
