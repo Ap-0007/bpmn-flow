@@ -11,6 +11,7 @@ import {
   type EngineMode,
   type ExecutionSnapshot,
   type FlowNode,
+  type GatewayDecision,
   type HistoryEntry,
   type PendingTask,
   type TokenSnapshot,
@@ -98,6 +99,13 @@ let guiding = false;
 let stopRequested = false;
 /** O operador pediu para seguir até o fim sem mais perguntas. */
 let autoAnswer = false;
+/** Passos do histórico já animados na condução atual. */
+let shownSteps = 0;
+/**
+ * Gateways cuja escolha já foi respondida no diálogo da atividade anterior —
+ * quando o token chegar neles, decidem pelos dados sem perguntar de novo.
+ */
+const answeredGateways = new Set<string>();
 
 /** Intervalo entre dois passos da animação, em milissegundos. */
 const STEP_MS = 500;
@@ -186,7 +194,7 @@ function readVariables(): Record<string, unknown> {
 function newEngine(mode: EngineMode, variables: Record<string, unknown>): WorkflowEngine {
   const process = currentModel?.processes[0];
   if (!process) throw new Error('Nenhum processo executável.');
-  const created = new WorkflowEngine(process, { mode, variables });
+  const created = new WorkflowEngine(process, { mode, variables, decide: onGatewayDecision });
   unbindViewer = viewer.bindEngine(created);
   created.on('node.enter', (e) => log(`Entrou: ${label(e.nodeId)}`));
   created.on('wait', (e) => log(`Aguardando: ${label(e.nodeId)} (${e.reason})`));
@@ -379,11 +387,12 @@ async function guidedRun(): Promise<void> {
     unbindViewer = undefined;
     viewer.clear();
 
+    shownSteps = 0;
+    answeredGateways.clear();
     let snapshot = engine.snapshot();
     if (snapshot.status === 'idle') snapshot = await engine.start();
-    let shown = 0;
     for (let step = 0; step < MAX_STEPS && !stopRequested; step++) {
-      shown = await animateFrom(snapshot.history, shown);
+      shownSteps = await animateFrom(snapshot.history, shownSteps);
       if (stopRequested || snapshot.status !== 'waiting') break;
       // O painel acompanha a parada, para o diálogo e a lateral contarem a
       // mesma história.
@@ -448,6 +457,8 @@ interface Step {
   request: StepRequest;
   /** Resposta usada quando o operador pediu para seguir sem perguntar. */
   defaults: Record<string, unknown>;
+  /** Gateways adiante cuja escolha este diálogo já cobre. */
+  decided: string[];
   apply: (answer: StepAnswer) => Promise<ExecutionSnapshot>;
 }
 
@@ -460,6 +471,9 @@ async function answerStep(snapshot: ExecutionSnapshot): Promise<ExecutionSnapsho
     : await prompt.ask(step.request);
   if (answer.action === 'stop') return undefined;
   if (answer.action === 'auto') autoAnswer = true;
+  // O gateway logo à frente não precisa perguntar de novo: acabou de ser
+  // respondido aqui, e os valores informados é que vão decidir.
+  for (const nodeId of step.decided) answeredGateways.add(nodeId);
   return step.apply(answer);
 }
 
@@ -480,6 +494,7 @@ function nextStep(snapshot: ExecutionSnapshot): Step | undefined {
         confirmLabel: 'Tentar de novo',
       },
       defaults: {},
+      decided: [],
       apply: () => active.retryTask(incident.tokenId),
     };
   }
@@ -504,6 +519,7 @@ function nextStep(snapshot: ExecutionSnapshot): Step | undefined {
       confirmLabel: 'Adiantar relógio',
     },
     defaults: {},
+    decided: [],
     apply: () => active.tick(timer),
   };
 }
@@ -528,6 +544,7 @@ function taskStep(active: WorkflowEngine, task: PendingTask): Step {
       confirmLabel: timer ? 'Disparar agora' : trigger ? 'Sinalizar' : 'Concluir',
     },
     defaults: ahead.defaults,
+    decided: ahead.decided,
     apply: (answer) =>
       trigger
         ? active.signal(task.nodeId, answer.values)
@@ -563,7 +580,52 @@ function gatewayStep(active: WorkflowEngine, token: TokenSnapshot): Step {
       confirmLabel: 'Sinalizar',
     },
     defaults: {},
+    decided: [],
     apply: (answer) => active.signal(answer.choiceId ?? first ?? token.nodeId),
+  };
+}
+
+/**
+ * O gateway pergunta antes de rotear o token. Só durante a condução, e só
+ * quando a escolha não foi respondida no diálogo da atividade anterior — fora
+ * disso o processo decide pelos dados, como manda a especificação.
+ */
+async function onGatewayDecision(decision: GatewayDecision): Promise<string | undefined> {
+  if (!guiding || stopRequested || !engine) return undefined;
+  if (answeredGateways.delete(decision.nodeId)) return undefined;
+  // Alcança o gateway no diagrama antes de perguntar sobre ele.
+  shownSteps = await animateFrom(engine.snapshot().history, shownSteps);
+  if (stopRequested || autoAnswer) return undefined;
+
+  renderTimers();
+  const answer = await prompt.ask(gatewayRequest(decision));
+  if (answer.action === 'stop') {
+    stopRequested = true;
+    return undefined;
+  }
+  if (answer.action === 'auto') autoAnswer = true;
+  return answer.choiceId;
+}
+
+/** O diálogo de um gateway: os caminhos, e o que os dados escolheriam. */
+function gatewayRequest(decision: GatewayDecision): StepRequest {
+  const byData = decision.options.find((option) => option.flowId === decision.suggested[0]);
+  const name = (option: (typeof decision.options)[number]): string =>
+    option.name ?? label(option.targetId);
+  return {
+    title: decision.name ?? decision.nodeId,
+    reason: byData
+      ? `Pelas condições o processo iria para "${name(byData)}"; a escolha aqui vale mais.`
+      : 'Nenhuma condição fecha: escolha por onde seguir.',
+    badges: [],
+    choices: decision.options.map((option) => ({
+      id: option.flowId,
+      label: name(option),
+      hint: option.condition ?? (option.isDefault ? 'caminho padrão' : undefined),
+    })),
+    selected: decision.suggested[0],
+    fields: [],
+    confirmLabel: 'Seguir',
   };
 }
 
@@ -579,6 +641,7 @@ function decisionPrompt(
   choices: PromptChoice[];
   fields: PromptField[];
   defaults: Record<string, unknown>;
+  decided: string[];
   selected?: string;
 } {
   const process = currentModel?.processes[0];
@@ -612,7 +675,13 @@ function decisionPrompt(
       });
     }
   });
-  return { choices, fields, defaults, selected };
+  return {
+    choices,
+    fields,
+    defaults,
+    decided: decisions.map((decision) => decision.nodeId),
+    selected,
+  };
 }
 
 /** O caminho que as variáveis de agora já escolheriam. */

@@ -32,9 +32,12 @@ export { evaluateCondition, evaluateExpression } from './engine/expression.js';
 export { Emitter } from './engine/emitter.js';
 export type {
   ActivityMetrics,
+  DecisionHandler,
   EngineEvents,
   EngineMode,
   EngineOptions,
+  GatewayDecision,
+  GatewayOption,
   ExecutionSnapshot,
   ExecutionStatus,
   HistoryEntry,

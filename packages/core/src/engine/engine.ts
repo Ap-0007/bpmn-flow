@@ -951,7 +951,7 @@ export class WorkflowEngine {
         continue;
       }
       // No ready tokens: check inclusive joins that can now fire.
-      if (this.fireReadyInclusiveJoins()) continue;
+      if (await this.fireReadyInclusiveJoins()) continue;
       // A conditional event fires as soon as its condition holds.
       if (this.fireReadyConditionalEvents()) continue;
       // An ad-hoc subprocess may declare itself done before running everything.
@@ -1003,19 +1003,19 @@ export class WorkflowEngine {
         this.park(token, 'catchEvent');
         return;
       case node.kind === 'exclusiveGateway':
-        this.handleExclusive(token, node);
+        await this.handleExclusive(token, node);
         return;
       case node.kind === 'parallelGateway':
         this.handleParallel(token, node);
         return;
       case node.kind === 'inclusiveGateway':
-        this.handleInclusive(token, node);
+        await this.handleInclusive(token, node);
         return;
       case node.kind === 'eventBasedGateway':
         this.handleEventBased(token, node);
         return;
       case node.kind === 'complexGateway':
-        this.handleComplex(token, node);
+        await this.handleComplex(token, node);
         return;
       case node.kind === 'subProcess' ||
         node.kind === 'transaction' ||
@@ -1521,10 +1521,12 @@ export class WorkflowEngine {
 
   // --- Gateways ----------------------------------------------------------
 
-  private handleExclusive(token: RuntimeToken, node: FlowNode): void {
+  private async handleExclusive(token: RuntimeToken, node: FlowNode): Promise<void> {
     this.completeNode(token);
     const flows = token.scope.graph.outgoing(node);
-    const chosen = this.firstMatching(flows, node, token.scope) ?? this.defaultFlow(flows, node);
+    const byData = this.firstMatching(flows, node, token.scope) ?? this.defaultFlow(flows, node);
+    // Exclusive means one: whatever the hook answers, only the first is taken.
+    const chosen = (await this.chooseFlows(token, node, flows, byData ? [byData] : []))[0];
     if (!chosen) {
       this.fail(new BpmnExecutionError(`Exclusive gateway ${node.id} has no valid outgoing flow.`));
       return;
@@ -1553,7 +1555,7 @@ export class WorkflowEngine {
     this.discard(token);
   }
 
-  private handleInclusive(token: RuntimeToken, node: FlowNode): void {
+  private async handleInclusive(token: RuntimeToken, node: FlowNode): Promise<void> {
     if (node.incoming.length > 1) {
       const key = `${token.scope.id}:${node.id}`;
       const buffer = this.inclusiveBuffers.get(key) ?? [];
@@ -1564,7 +1566,7 @@ export class WorkflowEngine {
       return;
     }
     this.completeNode(token);
-    this.inclusiveSplit(token, node);
+    await this.inclusiveSplit(token, node);
     this.discard(token);
   }
 
@@ -1573,8 +1575,8 @@ export class WorkflowEngine {
    * expression turns true (the number of tokens that arrived is exposed as
    * `arrived`); without one it behaves like an inclusive gateway.
    */
-  private handleComplex(token: RuntimeToken, node: FlowNode): void {
-    this.handleInclusive(token, node);
+  private async handleComplex(token: RuntimeToken, node: FlowNode): Promise<void> {
+    await this.handleInclusive(token, node);
   }
 
   private handleEventBased(token: RuntimeToken, node: FlowNode): void {
@@ -1589,6 +1591,40 @@ export class WorkflowEngine {
   }
 
   // --- Flow selection ----------------------------------------------------
+
+  /**
+   * Lets `options.decide` route the token instead of the conditions. Without a
+   * hook — or when it answers nothing the gateway recognizes — the data-driven
+   * choice stands.
+   */
+  private async chooseFlows(
+    token: RuntimeToken,
+    node: FlowNode,
+    flows: SequenceFlow[],
+    byData: SequenceFlow[],
+  ): Promise<SequenceFlow[]> {
+    if (!this.options.decide) return byData;
+    const answer = await this.options.decide({
+      nodeId: node.id,
+      nodeKind: node.kind,
+      options: flows.map((flow) => ({
+        flowId: flow.id,
+        targetId: flow.targetRef,
+        isDefault: flow.isDefault === true || flow.id === node.default,
+        ...(flow.name ? { name: flow.name } : {}),
+        ...(flow.conditionExpression ? { condition: flow.conditionExpression } : {}),
+      })),
+      suggested: byData.map((flow) => flow.id),
+      variables: this.mergedVariables(token.scope),
+      ...(node.name ? { name: node.name } : {}),
+    });
+    if (answer === undefined) return byData;
+    const ids = typeof answer === 'string' ? [answer] : answer;
+    const picked = ids
+      .map((id) => flows.find((flow) => flow.id === id))
+      .filter((flow): flow is SequenceFlow => flow !== undefined);
+    return picked.length > 0 ? picked : byData;
+  }
 
   private firstMatching(
     flows: SequenceFlow[],
@@ -1610,7 +1646,7 @@ export class WorkflowEngine {
     return undefined;
   }
 
-  private inclusiveSplit(token: RuntimeToken, node: FlowNode): void {
+  private async inclusiveSplit(token: RuntimeToken, node: FlowNode): Promise<void> {
     const flows = token.scope.graph.outgoing(node);
     const variables = this.mergedVariables(token.scope);
     const taken = flows.filter(
@@ -1618,12 +1654,13 @@ export class WorkflowEngine {
         f.id !== node.default &&
         (!f.conditionExpression || evaluateCondition(f.conditionExpression, variables)),
     );
-    const chosen =
+    const byData =
       taken.length > 0
         ? taken
         : this.defaultFlow(flows, node)
           ? [this.defaultFlow(flows, node)!]
           : [];
+    const chosen = await this.chooseFlows(token, node, flows, byData);
     if (chosen.length === 0) {
       this.fail(new BpmnExecutionError(`Inclusive gateway ${node.id} has no valid outgoing flow.`));
       return;
@@ -1935,7 +1972,7 @@ export class WorkflowEngine {
 
   // --- Inclusive join firing --------------------------------------------
 
-  private fireReadyInclusiveJoins(): boolean {
+  private async fireReadyInclusiveJoins(): Promise<boolean> {
     for (const [key, buffer] of this.inclusiveBuffers) {
       if (buffer.length === 0) continue;
       const first = buffer[0]!;
@@ -1951,7 +1988,7 @@ export class WorkflowEngine {
       this.inclusiveBuffers.delete(key);
       this.completeNode(first);
       // Merge all buffered tokens into a single continuation.
-      this.inclusiveSplit(first, node);
+      await this.inclusiveSplit(first, node);
       return true;
     }
     return false;

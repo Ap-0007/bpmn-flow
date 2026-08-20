@@ -78,6 +78,11 @@ Opções:
 
 - `mode`: `"automation"` (padrão) pausa em tarefas de usuário/captura;
   `"auto"` resolve todas as esperas para simular uma execução completa.
+- `decide`: chamado antes de um gateway exclusivo/inclusivo rotear o token, para
+  uma pessoa (ou outro sistema) escolher o ramo. Recebe as alternativas com suas
+  condições e o que os dados escolheriam; devolver `undefined` mantém a decisão
+  do motor. Sem essa opção, o gateway decide pelos dados, como manda a
+  especificação.
 - `processes`: demais processos do arquivo, para `callActivity` executar o
   processo referenciado (normalmente `model.processes`).
 - `onHandlerError`: `"fail"` (padrão) derruba a execução; `"incident"` segura o

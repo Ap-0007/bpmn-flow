@@ -241,6 +241,21 @@ aplicar `assignments` abre exatamente aquele caminho. No playground, o botão
 depende de uma pessoa — concluir a atividade, informar um valor, escolher o
 caminho — em vez de decidir sozinho e mostrar só o resultado.
 
+Um processo sem nenhuma tarefa não tem onde parar, e mesmo assim decide: para
+esses, o motor aceita um `decide` e pergunta no próprio gateway.
+
+```ts
+new WorkflowEngine(process, {
+  decide: async ({ name, options, suggested }) => {
+    // options traz cada ramo com sua condição; suggested, o que os dados diriam
+    return await perguntarAoOperador(name, options, suggested);
+  },
+});
+```
+
+Sem essa opção nada muda: o gateway decide pelos dados, como manda a
+especificação.
+
 ![Diálogo do passo a passo perguntando o valor e o caminho a seguir](docs/media/passo-a-passo-decisao.png)
 
 ## Timers
