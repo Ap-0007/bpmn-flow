@@ -42,8 +42,13 @@ Há dois modos, alternados pelos botões "Executar" e "Editar".
 - O painel mostra status, variáveis e o histórico da execução; o diagrama
   destaca nós concluídos, tokens ativos, atividades em espera e fluxos
   percorridos.
-- "Reprisar" refaz a execução passo a passo a partir do histórico; "Métricas"
-  liga etiquetas de tempo médio em cada atividade.
+- "Run" refaz a execução passo a passo a partir do histórico; "Métricas" liga
+  etiquetas de tempo médio em cada atividade.
+- O painel **Variáveis do processo** lista o que o diagrama lê, com a expressão
+  que consome cada variável, e a caixa JSON já vem preenchida com valores que
+  fazem o processo andar.
+- O botão na borda do painel recolhe e expande a lateral; a escolha fica
+  guardada entre sessões.
 - Diagramas sem layout são posicionados automaticamente; use "Ajustar" para
   enquadrar e o mouse para navegar (arrastar) e dar zoom (roda).
 

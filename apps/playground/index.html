@@ -23,7 +23,7 @@
         <button id="start" type="button">Iniciar</button>
         <button id="autorun" type="button">Executar tudo</button>
         <button id="reset" type="button" class="secondary">Reiniciar</button>
-        <button id="replay" type="button" class="secondary">Reprisar</button>
+        <button id="replay" type="button" class="secondary">Run</button>
         <button id="metrics" type="button" class="secondary">Métricas</button>
         <button id="fit" type="button" class="secondary">Ajustar</button>
       </div>
@@ -41,11 +41,22 @@
       </div>
     </header>
 
-    <main class="app-main">
+    <main class="app-main" id="app-main">
       <section id="diagram" class="diagram" aria-label="Diagrama BPMN"></section>
       <section id="editor" class="diagram hidden" aria-label="Editor BPMN"></section>
 
-      <aside class="panel">
+      <button
+        id="panel-toggle"
+        class="panel-toggle"
+        type="button"
+        aria-expanded="true"
+        aria-controls="panel"
+        title="Recolher painel"
+      >
+        ›
+      </button>
+
+      <aside class="panel" id="panel">
         <div class="panel-block" data-mode="edit" hidden>
           <h2>Validação</h2>
           <div id="validation" class="validation"></div>
@@ -64,6 +75,11 @@
         <div class="panel-block" data-mode="run">
           <h2>Timers</h2>
           <div id="timers" class="timers"></div>
+        </div>
+
+        <div class="panel-block" data-mode="run">
+          <h2>Variáveis do processo</h2>
+          <div id="variable-hints" class="hints"></div>
         </div>
 
         <div class="panel-block" data-mode="run">

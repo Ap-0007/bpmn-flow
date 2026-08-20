@@ -138,23 +138,67 @@ button.secondary:hover {
 }
 
 .app-main {
+  --panel-width: 360px;
   display: flex;
   flex: 1;
   min-height: 0;
+  /* O SVG do diagrama é maior que o container: sem isto ele passa por cima. */
+  overflow: hidden;
+  position: relative;
+}
+
+.app-main.panel-collapsed {
+  --panel-width: 0px;
 }
 
 .diagram {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  position: relative;
   background: var(--surface);
 }
 
 .panel {
-  width: 360px;
+  flex: 0 0 var(--panel-width);
+  width: var(--panel-width);
   border-left: 1px solid var(--border);
   background: var(--surface);
   overflow-y: auto;
   padding: 1rem;
+  /* Acima do diagrama, para nunca ser coberto por ele. */
+  position: relative;
+  z-index: 1;
+  transition:
+    flex-basis 0.18s ease,
+    width 0.18s ease;
+}
+
+.panel-collapsed .panel {
+  padding: 0;
+  border-left: none;
+  overflow: hidden;
+}
+
+.panel-toggle {
+  position: absolute;
+  top: 0.6rem;
+  right: calc(var(--panel-width) + 0.5rem);
+  z-index: 2;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  line-height: 1;
+  font-size: 1.1rem;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: 0 1px 4px rgb(31 41 51 / 18%);
+  transition: right 0.18s ease;
+}
+
+.panel-toggle:hover {
+  color: var(--text);
 }
 
 .panel-block + .panel-block {
@@ -271,4 +315,36 @@ button.secondary:hover {
 .timers .timer {
   margin: 0 0 0.35rem;
   font-size: 0.85rem;
+}
+
+/* --- Variáveis descobertas no diagrama ---------------------------------- */
+
+.hints {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hint {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface);
+}
+
+.hint-name {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.hint-usage {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.hint-expression {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
