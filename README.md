@@ -225,6 +225,24 @@ A sugestão sai da forma da expressão (`valor > 1000` sugere 1001, `status ===
 playground usa isso para já abrir a caixa de variáveis preenchida com algo que
 faz o processo andar, e lista cada variável com a expressão que a consome.
 
+A mesma leitura responde a pergunta seguinte: **para onde o processo vai depois
+desta atividade, e o que decide isso?**
+
+```ts
+decisionsAfter(process, 'PreencherFormulario');
+// [{ nodeId: 'Gateway_1', name: 'Valor > R$ 1000?', variables: ['valor'],
+//    options: [{ label: 'Sim', condition: 'valor > 1000', assignments: { valor: 1001 } },
+//              { label: 'Não', isDefault: true, assignments: { valor: 1000 } }] }]
+```
+
+Cada opção já vem com sua condição satisfeita e as concorrentes refutadas, então
+aplicar `assignments` abre exatamente aquele caminho. No playground, o botão
+"Run" usa isso para conduzir a execução: a cada parada abre um diálogo com o que
+depende de uma pessoa — concluir a atividade, informar um valor, escolher o
+caminho — em vez de decidir sozinho e mostrar só o resultado.
+
+![Diálogo do passo a passo perguntando o valor e o caminho a seguir](docs/media/passo-a-passo-decisao.png)
+
 ## Timers
 
 Eventos de timer viram data de vencimento. O motor não tem relógio próprio: ele

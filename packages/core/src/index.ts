@@ -3,6 +3,8 @@ export * from './model/types.js';
 export { ProcessGraph } from './model/graph.js';
 export { processVariables, suggestVariables } from './model/variables.js';
 export type { VariableUsage } from './model/variables.js';
+export { decisionsAfter } from './model/decisions.js';
+export type { DecisionOption, DecisionPoint } from './model/decisions.js';
 export { parseBpmn } from './parser/parse.js';
 export { addFlowReferences } from './parser/references.js';
 export { validateBpmn, validateModel } from './validate.js';

@@ -31,6 +31,12 @@ propósito: o viewer renderiza direto do XML original.
 `ProcessGraph` indexa nós, fluxos e eventos de borda para acesso constante
 durante a execução.
 
+`variables.ts` e `decisions.ts` leem o diagrama sem executá-lo: o primeiro
+descobre quais variáveis as expressões consomem, o segundo transforma os
+gateways à frente de um nó em pergunta ("por qual caminho?") mais os valores que
+respondem cada alternativa. É o que permite uma UI perguntar antes do token
+chegar lá, em vez de mostrar só o caminho já escolhido.
+
 ### Parser (`@bpmn-flow/core/parser`)
 
 Usa `bpmn-moddle` para ler o XML. O wiring de entrada/saída de cada nó é

@@ -148,7 +148,7 @@ export function suggestVariables(process: ProcessModel): Record<string, unknown>
 }
 
 /** Identifiers an expression reads, ignoring strings, properties and globals. */
-function identifiersOf(expression: string): string[] {
+export function identifiersOf(expression: string): string[] {
   const withoutStrings = expression.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, ' ');
   const names: string[] = [];
   const pattern = /(^|[^\w$.])([A-Za-z_$][\w$]*)/g;
@@ -161,6 +161,64 @@ function identifiersOf(expression: string): string[] {
   return names;
 }
 
+/**
+ * A value for `name` that makes `expression` evaluate to `want`, read from the
+ * shape of the comparison: `pago === true` is satisfied by `true` and refuted
+ * by `false`, `valor > 1000` by `1001` and `1000`. Returns `undefined` when the
+ * expression is too free-form to read.
+ */
+export function inferValue(name: string, expression: string, want = true): unknown {
+  const escaped = name.replace(/[$]/g, '\\$&');
+
+  const boolean = new RegExp(`\\b${escaped}\\s*(===?|!==?)\\s*(true|false)`).exec(expression);
+  if (boolean) {
+    const literal = boolean[2] === 'true';
+    const equality = !boolean[1]!.startsWith('!');
+    return equality === want ? literal : !literal;
+  }
+
+  const numeric = new RegExp(`\\b${escaped}\\s*(>=|<=|>|<|===?|!==?)\\s*(-?\\d+(?:\\.\\d+)?)`).exec(
+    expression,
+  );
+  if (numeric) {
+    const value = Number(numeric[2]);
+    const table: Record<string, [number, number]> = {
+      // operator: [value that satisfies, value that refutes]
+      '>': [value + 1, value],
+      '>=': [value, value - 1],
+      '<': [value - 1, value],
+      '<=': [value, value + 1],
+      '==': [value, value + 1],
+      '===': [value, value + 1],
+      '!=': [value + 1, value],
+      '!==': [value + 1, value],
+    };
+    const pair = table[numeric[1]!] ?? [value + 1, value];
+    return want ? pair[0] : pair[1];
+  }
+
+  const text = new RegExp(`\\b${escaped}\\s*(===?|!==?)\\s*['"\`]([^'"\`]*)['"\`]`).exec(
+    expression,
+  );
+  if (text) {
+    const literal = text[2]!;
+    const equality = !text[1]!.startsWith('!');
+    const other = literal === '' ? 'x' : '';
+    return equality === want ? literal : other;
+  }
+
+  const length = new RegExp(`\\b${escaped}\\.length\\s*(>=|>)\\s*(\\d+)`).exec(expression);
+  if (length) {
+    const enough = Number(length[2]) + (length[1] === '>' ? 1 : 0);
+    const size = want ? enough : Math.max(0, enough - 1);
+    return Array.from({ length: size }, (_, index) => `item-${index + 1}`);
+  }
+
+  // Bare truthiness check: `${aprovado}` or `aprovado && valor > 10`.
+  if (new RegExp(`(^|[^\\w$.])${escaped}\\s*(&&|\\|\\||\\)|$)`).test(expression)) return want;
+  return undefined;
+}
+
 /** Infers a value that satisfies the expression, from its shape. */
 function suggestFor(
   name: string,
@@ -168,47 +226,9 @@ function suggestFor(
   expressions: string[],
 ): unknown | undefined {
   if (kind === 'collection') return ['item-1', 'item-2'];
-
   for (const expression of expressions) {
-    const escaped = name.replace(/[$]/g, '\\$&');
-    const boolean = new RegExp(`\\b${escaped}\\s*(===?|!==?)\\s*(true|false)`).exec(expression);
-    if (boolean) {
-      const wanted = boolean[2] === 'true';
-      return boolean[1]!.startsWith('!') ? !wanted : wanted;
-    }
-
-    const numeric = new RegExp(
-      `\\b${escaped}\\s*(>=|<=|>|<|===?|!==?)\\s*(-?\\d+(?:\\.\\d+)?)`,
-    ).exec(expression);
-    if (numeric) {
-      const value = Number(numeric[2]);
-      switch (numeric[1]) {
-        case '>':
-          return value + 1;
-        case '>=':
-        case '==':
-        case '===':
-          return value;
-        case '<':
-          return value - 1;
-        case '<=':
-          return value;
-        default:
-          return value + 1;
-      }
-    }
-
-    const text = new RegExp(`\\b${escaped}\\s*===?\\s*['"\`]([^'"\`]*)['"\`]`).exec(expression);
-    if (text) return text[1];
-
-    const length = new RegExp(`\\b${escaped}\\.length\\s*(>=|>)\\s*(\\d+)`).exec(expression);
-    if (length) {
-      const size = Number(length[2]) + (length[1] === '>' ? 1 : 0);
-      return Array.from({ length: size }, (_, index) => `item-${index + 1}`);
-    }
-
-    // Bare truthiness check: `${aprovado}` or `aprovado && valor > 10`.
-    if (new RegExp(`(^|[^\\w$.])${escaped}\\s*(&&|\\|\\||\\)|$)`).test(expression)) return true;
+    const value = inferValue(name, expression);
+    if (value !== undefined) return value;
   }
   return undefined;
 }
