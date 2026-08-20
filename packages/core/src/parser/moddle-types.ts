@@ -51,6 +51,12 @@ export interface MdResourceRole {
   resourceAssignmentExpression?: { expression?: { body?: string } };
 }
 
+/** `bpmn:DataInputAssociation` / `bpmn:DataOutputAssociation`. */
+export interface MdDataAssociation {
+  $type: string;
+  assignment?: { from?: { body?: string }; to?: { body?: string } }[];
+}
+
 /** `bpmn:Lane` with the flow nodes it contains (references resolved). */
 export interface MdLane {
   $type: string;
@@ -101,6 +107,15 @@ export interface MdElement {
   resources?: MdResourceRole[];
   /** Receive/send tasks: the message they wait for or emit. */
   messageRef?: MdRef & { name?: string };
+
+  /** Ad-hoc subprocess: when its activities are considered done. */
+  completionCondition?: { body?: string };
+  /** Ad-hoc subprocess: `Parallel` (default) or `Sequential`. */
+  ordering?: string;
+
+  /** Data mapping in and out of an activity. */
+  dataInputAssociations?: MdDataAssociation[];
+  dataOutputAssociations?: MdDataAssociation[];
 
   // process: swimlanes
   laneSets?: { lanes?: MdLane[] }[];

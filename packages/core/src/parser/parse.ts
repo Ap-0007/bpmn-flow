@@ -11,6 +11,7 @@ import {
 import type {
   Association,
   BpmnModel,
+  DataMapping,
   EventDetail,
   FlowNode,
   LoopCharacteristics,
@@ -20,6 +21,7 @@ import type {
   SequenceFlow,
 } from '../model/types.js';
 import type {
+  MdDataAssociation,
   MdElement,
   MdEventDefinition,
   MdLane,
@@ -147,6 +149,19 @@ function readLaneAssignments(lanes: MdLane[] | undefined, into: Map<string, stri
   }
 }
 
+/** Assignments of a data association, as `from`/`to` expression pairs. */
+function readDataMappings(associations: MdDataAssociation[] | undefined): DataMapping[] {
+  const mappings: DataMapping[] = [];
+  for (const association of associations ?? []) {
+    for (const assignment of association.assignment ?? []) {
+      const from = assignment.from?.body;
+      const to = assignment.to?.body;
+      if (from && to) mappings.push({ from, to });
+    }
+  }
+  return mappings;
+}
+
 /** `bpmn:Association` artifacts, which wire compensation handlers. */
 function readAssociations(artifacts: MdElement[] | undefined): Association[] {
   const associations: Association[] = [];
@@ -197,6 +212,14 @@ function readScope(elements: MdElement[]): ScopeAccumulator {
     if (candidates.length > 0) node.candidates = candidates;
     const message = el.messageRef?.name ?? el.messageRef?.id;
     if (message) node.messageRef = message;
+    if (kind === 'adHocSubProcess') {
+      if (el.completionCondition?.body) node.completionCondition = el.completionCondition.body;
+      if (el.ordering?.toLowerCase() === 'sequential') node.sequential = true;
+    }
+    const dataInput = readDataMappings(el.dataInputAssociations);
+    if (dataInput.length > 0) node.dataInput = dataInput;
+    const dataOutput = readDataMappings(el.dataOutputAssociations);
+    if (dataOutput.length > 0) node.dataOutput = dataOutput;
     if (el.triggeredByEvent) node.triggeredByEvent = true;
     if (kind === 'startEvent' && el.isInterrupting !== undefined) {
       node.interrupting = el.isInterrupting;

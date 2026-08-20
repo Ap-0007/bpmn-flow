@@ -26,10 +26,11 @@ Um escopo termina quando não sobra nenhum token nele.
 | `endEvent` (escalation)           | Propaga a escalation para fora; sem tratador, a execução segue normalmente.                         |
 | `endEvent` (cancel)               | Dentro de uma `transaction`: compensa o que foi feito e sai pelo evento de borda de cancelamento.   |
 | `endEvent` (compensation)         | Dispara os tratadores de compensação do escopo, em ordem inversa.                                   |
-| `intermediateThrowEvent`          | Pass-through: conclui e segue adiante.                                                              |
+| `intermediateThrowEvent`          | Lança o gatilho (sinal, mensagem, escalation, compensação) e segue adiante.                         |
 | `intermediateCatchEvent`          | Estaciona o token (`waitReason: "catchEvent"`) até `signal()` ou até o timer vencer.                |
 | `boundaryEvent` interrompente     | Descarta o token da atividade hospedeira (ou o escopo do subprocesso) e segue pelo fluxo do evento. |
 | `boundaryEvent` não interrompente | Mantém a atividade em execução e cria um token adicional no fluxo do evento.                        |
+| `boundaryEvent` condicional       | Reavaliado a cada quiescência do motor; dispara uma vez por ativação da atividade.                  |
 
 Definições de evento reconhecidas pelo parser: `message`, `timer`, `error`,
 `signal`, `escalation`, `conditional`, `compensation`, `cancel`, `terminate` e
@@ -55,6 +56,13 @@ token que a disparou seguir adiante.
 `transaction` + `cancelEventDefinition` combinam as duas coisas: cancelar
 compensa o que já foi feito, descarta o resto do trabalho da transação e sai
 pelo evento de borda de cancelamento.
+
+### Eventos de lançamento
+
+Um evento de lançamento com definição de **sinal** ou **mensagem** entrega o
+gatilho na hora, para todos os assinantes correspondentes do próprio processo —
+eventos de captura parados, eventos de borda e event subprocesses. É como um
+`signal()` externo, disparado de dentro do diagrama.
 
 ### Escalation
 
@@ -91,6 +99,35 @@ a execução.
   repetido (`options.retry`) e, com `onHandlerError: "incident"`, vira um
   incidente que segura o token em vez de derrubar a execução.
 
+## Subprocesso ad-hoc
+
+`adHocSubProcess` não tem fluxo de sequência ligando suas atividades: toda
+atividade sem fluxo de entrada é elegível. `ordering="Parallel"` (padrão) inicia
+todas de uma vez; `Sequential` executa uma de cada vez, na ordem do documento.
+Um `completionCondition` verdadeiro encerra o escopo antes de todas rodarem,
+descartando o que sobrou.
+
+## Dados de entrada e saída
+
+`dataInputAssociation` e `dataOutputAssociation` na forma `assignment/from/to`
+copiam valores para dentro e para fora de um subprocesso ou call activity:
+
+```xml
+<bpmn:callActivity id="Chamar" calledElement="Cobranca">
+  <bpmn:dataInputAssociation>
+    <bpmn:assignment><bpmn:from>valorPedido</bpmn:from><bpmn:to>valor</bpmn:to></bpmn:assignment>
+  </bpmn:dataInputAssociation>
+  <bpmn:dataOutputAssociation>
+    <bpmn:assignment><bpmn:from>recibo</bpmn:from><bpmn:to>reciboDaCobranca</bpmn:to></bpmn:assignment>
+  </bpmn:dataOutputAssociation>
+</bpmn:callActivity>
+```
+
+Declarar um mapeamento de entrada **isola** o escopo: o processo chamado passa a
+enxergar apenas o que foi mapeado, e o que ele escreve fica nele — só o
+mapeamento de saída atravessa de volta. Sem mapeamento nenhum, o escopo filho
+continua lendo as variáveis do pai pela cadeia de escopos.
+
 ## Repetição de atividades
 
 ### Multi-instância
@@ -125,6 +162,10 @@ para no evento — ou em que a atividade com evento de borda começa a esperar.
 
 Um timer de borda é desarmado quando a atividade termina antes do prazo, e o
 vencimento faz parte do estado serializado, então sobrevive a um restart.
+
+Um ciclo (`R3/PT1H`, `R/PT1H`) em evento de borda **não interrompente** rearma a
+cada disparo — três lembretes de hora em hora, ou lembretes enquanto a atividade
+durar. As repetições restantes também fazem parte do estado.
 
 ## Raias e atribuição
 
@@ -199,24 +240,22 @@ expressão que ainda assim lança, ou que não retorna `true`, é tratada como f
 
 ## Divergências assumidas
 
-1. **Ciclos de timer disparam uma vez.** `timeCycle` (`R3/PT10M`) é lido como o
-   intervalo, sem repetir. O motor também não tem relógio próprio: calcula o
-   vencimento e o host chama `tick()` — o `@bpmn-flow/server` faz isso em
-   intervalo configurável.
+1. **O motor não tem relógio próprio.** Ele calcula o vencimento e o host chama
+   `tick()` — o `@bpmn-flow/server` faz isso em intervalo configurável. Um ciclo
+   (`R3/PT10M`) repete só em evento de borda não interrompente, que é onde
+   repetir faz sentido.
 2. **Gateway complexo sem `activationCondition`** cai no comportamento
    inclusivo, em vez de recusar o diagrama.
 3. **Modo `auto`.** Fora da especificação, existe para simular execuções:
    resolve automaticamente qualquer espera e, quando um gateway não tem default
    nem condição verdadeira, toma o primeiro fluxo de saída. O modo `automation`
    (padrão) segue a especificação.
-4. **Evento de borda condicional não é reavaliado sozinho.** O de captura é
-   (a cada quiescência do motor); o de borda depende de `signal()` pelo id.
-5. **Mapeamento de dados não é executado.** `ioSpecification` e data
-   associations de entrada/saída são ignorados: o escopo filho lê as variáveis
-   do pai pela cadeia de escopos.
-6. **Correlação de mensagem por chave não existe.** A entrega é por nome da
+4. **Mapeamento de dados por `assignment`.** As data associations são lidas na
+   forma `assignment/from/to` (expressões); `ioSpecification` com data inputs e
+   outputs formais não é interpretado.
+5. **Correlação de mensagem por chave não existe.** A entrega é por nome da
    mensagem/sinal ou pelo id do elemento.
-7. **DMN está fora de escopo.** `businessRuleTask` executa o handler que você
+6. **DMN está fora de escopo.** `businessRuleTask` executa o handler que você
    registrar, e é por ali que um motor de decisão entra.
 
 ## Medição

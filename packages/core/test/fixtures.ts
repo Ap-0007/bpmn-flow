@@ -741,3 +741,124 @@ export const RECEIVE_TASK = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:sequenceFlow id="f2" sourceRef="Enviar" targetRef="End" />
   </bpmn:process>
 </bpmn:definitions>`;
+
+export const THROW_SIGNAL = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:signal id="Sig" name="PedidoPago" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="Cobrar" />
+    <bpmn:intermediateThrowEvent id="Avisar">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="EndCobranca" />
+    <bpmn:intermediateCatchEvent id="EsperarPagamento">
+      <bpmn:signalEventDefinition signalRef="Sig" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:task id="EmitirNota" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="Cobrar" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="EsperarPagamento" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="Cobrar" targetRef="Avisar" />
+    <bpmn:sequenceFlow id="fa3" sourceRef="Avisar" targetRef="EndCobranca" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="EsperarPagamento" targetRef="EmitirNota" />
+    <bpmn:sequenceFlow id="fb3" sourceRef="EmitirNota" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;
+
+export const CONDITIONAL_BOUNDARY = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:parallelGateway id="Split" />
+    <bpmn:userTask id="Analisar" />
+    <bpmn:boundaryEvent id="FicouUrgente" attachedToRef="Analisar" cancelActivity="false">
+      <bpmn:conditionalEventDefinition>
+        <bpmn:condition xsi:type="bpmn:tFormalExpression">urgente === true</bpmn:condition>
+      </bpmn:conditionalEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:userTask id="Sinalizar" />
+    <bpmn:task id="Priorizar" />
+    <bpmn:endEvent id="EndUrgente" />
+    <bpmn:endEvent id="EndSinal" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="fa" sourceRef="Split" targetRef="Analisar" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Split" targetRef="Sinalizar" />
+    <bpmn:sequenceFlow id="fa2" sourceRef="Analisar" targetRef="End" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Sinalizar" targetRef="EndSinal" />
+    <bpmn:sequenceFlow id="fc" sourceRef="FicouUrgente" targetRef="Priorizar" />
+    <bpmn:sequenceFlow id="fc2" sourceRef="Priorizar" targetRef="EndUrgente" />`);
+
+export const TIMER_CYCLE = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:userTask id="Aguardar" />
+    <bpmn:boundaryEvent id="Lembrete" attachedToRef="Aguardar" cancelActivity="false">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">R3/PT1H</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="Cobrar" />
+    <bpmn:endEvent id="EndLembrete" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Aguardar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Aguardar" targetRef="End" />
+    <bpmn:sequenceFlow id="fb" sourceRef="Lembrete" targetRef="Cobrar" />
+    <bpmn:sequenceFlow id="fb2" sourceRef="Cobrar" targetRef="EndLembrete" />`);
+
+export const AD_HOC = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:adHocSubProcess id="Atendimento" ordering="Parallel">
+      <bpmn:serviceTask id="Ligar" />
+      <bpmn:serviceTask id="Enviar" />
+      <bpmn:serviceTask id="Registrar" />
+      <bpmn:completionCondition xsi:type="bpmn:tFormalExpression">resolvido === true</bpmn:completionCondition>
+    </bpmn:adHocSubProcess>
+    <bpmn:task id="Fechar" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Atendimento" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Atendimento" targetRef="Fechar" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Fechar" targetRef="End" />`);
+
+export const AD_HOC_SEQUENTIAL = wrap(`
+    <bpmn:startEvent id="Start" />
+    <bpmn:adHocSubProcess id="Checklist" ordering="Sequential">
+      <bpmn:userTask id="Item1" />
+      <bpmn:userTask id="Item2" />
+    </bpmn:adHocSubProcess>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Checklist" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Checklist" targetRef="End" />`);
+
+export const DATA_MAPPING = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions ${NS} id="Defs">
+  <bpmn:process id="Cobranca" isExecutable="true">
+    <bpmn:startEvent id="CStart" />
+    <bpmn:serviceTask id="Cobrar" />
+    <bpmn:userTask id="Confirmar" />
+    <bpmn:endEvent id="CEnd" />
+    <bpmn:sequenceFlow id="c1" sourceRef="CStart" targetRef="Cobrar" />
+    <bpmn:sequenceFlow id="c2" sourceRef="Cobrar" targetRef="Confirmar" />
+    <bpmn:sequenceFlow id="c3" sourceRef="Confirmar" targetRef="CEnd" />
+  </bpmn:process>
+  <bpmn:process id="Pedido" isExecutable="true">
+    <bpmn:startEvent id="Start" />
+    <bpmn:callActivity id="Chamar" calledElement="Cobranca">
+      <bpmn:dataInputAssociation id="in1">
+        <bpmn:assignment>
+          <bpmn:from>valorPedido</bpmn:from>
+          <bpmn:to>valor</bpmn:to>
+        </bpmn:assignment>
+      </bpmn:dataInputAssociation>
+      <bpmn:dataOutputAssociation id="out1">
+        <bpmn:assignment>
+          <bpmn:from>recibo</bpmn:from>
+          <bpmn:to>reciboDaCobranca</bpmn:to>
+        </bpmn:assignment>
+      </bpmn:dataOutputAssociation>
+    </bpmn:callActivity>
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="f0" sourceRef="Start" targetRef="Chamar" />
+    <bpmn:sequenceFlow id="f1" sourceRef="Chamar" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>`;

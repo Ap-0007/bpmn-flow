@@ -22,6 +22,18 @@ fluxos de sequência com condições e colaboração. A interchange de diagrama 
 
 Lança `BpmnParseError` para XML inválido ou sem processo.
 
+### `processVariables(process)` e `suggestVariables(process)`
+
+Descobrem, a partir das expressões do diagrama, quais variáveis o processo lê —
+condições de fluxo, cardinalidade e coleção de multi-instância, condição de
+conclusão, condição de ativação, eventos condicionais — com a expressão que as
+usa e um valor sugerido pela forma dela. Variáveis que o processo só escreve
+(item da multi-instância, coleção de saída) ficam de fora.
+
+```ts
+suggestVariables(process); // { pago: true, valor: 1001, itens: ['item-1', 'item-2'] }
+```
+
 ### `addFlowReferences(xml): Promise<string>`
 
 Devolve o mesmo XML com o `<bpmn:incoming>`/`<bpmn:outgoing>` de cada nó

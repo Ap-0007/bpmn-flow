@@ -14,7 +14,7 @@ import type { EngineMode, ExecutionStatus, HistoryEntry, WaitReason } from './ty
  *
  * Bump {@link ENGINE_STATE_VERSION} whenever the shape changes.
  */
-export const ENGINE_STATE_VERSION = 5;
+export const ENGINE_STATE_VERSION = 6;
 
 /** Where a token currently sits, since not every token lives in a scope. */
 export type TokenPlacement =
@@ -48,6 +48,10 @@ export interface ScopeState {
   variables?: Record<string, unknown>;
   /** Set when the scope holds one instance of a repeated activity. */
   loopId?: string;
+  /** Data-mapped scopes do not read the caller's variables. */
+  isolated?: boolean;
+  /** Ad-hoc subprocess: activities not started yet. */
+  adHocPending?: string[];
 }
 
 /** A multi-instance or standard loop in progress. */
@@ -94,6 +98,8 @@ export interface TimerState {
   dueAt: number;
   /** The original definition (`PT5M`, a date, or a cycle). */
   definition: string;
+  /** Cycles only: firings left, or `null` while the activity lasts. */
+  repetitions?: number | null;
 }
 
 /** Arrival counts per incoming flow of a parallel join. */

@@ -1,5 +1,7 @@
 import {
   parseBpmn,
+  processVariables,
+  suggestVariables,
   WorkflowEngine,
   type BpmnModel,
   type EngineMode,
@@ -7,6 +9,7 @@ import {
   type FlowNode,
   type PendingTask,
   type TokenSnapshot,
+  type VariableUsage,
   type ValidationResult,
 } from '@bpmn-flow/core';
 import { BpmnFlowViewer, ExecutionReplay } from '@bpmn-flow/viewer';
@@ -55,6 +58,9 @@ const els = {
   status: $<HTMLParagraphElement>('status'),
   actions: $<HTMLDivElement>('actions'),
   timers: $<HTMLDivElement>('timers'),
+  variableHints: $<HTMLDivElement>('variable-hints'),
+  panelToggle: $<HTMLButtonElement>('panel-toggle'),
+  appMain: $<HTMLElement>('app-main'),
   variables: $<HTMLTextAreaElement>('variables'),
   variablesView: $<HTMLPreElement>('variables-view'),
   log: $<HTMLOListElement>('log'),
@@ -129,6 +135,7 @@ async function loadDiagram(xml: string): Promise<void> {
   currentXml = xml;
   currentModel = await parseBpmn(xml);
   nodesById = flattenNodes(currentModel);
+  renderVariableHints();
   await viewer.load(xml);
   teardownEngine();
   if (replayTimer !== undefined) {
@@ -253,6 +260,55 @@ function actionButton(text: string, onClick: () => void): void {
   button.textContent = text;
   button.addEventListener('click', onClick);
   els.actions.append(button);
+}
+
+/**
+ * Mostra as variáveis que o diagrama realmente lê — com a expressão que as usa —
+ * e preenche a caixa JSON com um valor que faz cada caminho acontecer.
+ */
+function renderVariableHints(): void {
+  els.variableHints.replaceChildren();
+  const process = currentModel?.processes[0];
+  if (!process) return;
+
+  const usages = processVariables(process);
+  if (usages.length === 0) {
+    const none = document.createElement('p');
+    none.className = 'muted';
+    none.textContent = 'Este processo não lê nenhuma variável.';
+    els.variableHints.append(none);
+  } else {
+    for (const usage of usages) els.variableHints.append(hintCard(usage));
+  }
+
+  // A caixa JSON começa com o que faz o processo andar, em vez de "{}".
+  els.variables.value = JSON.stringify(suggestVariables(process), null, 2);
+}
+
+function hintCard(usage: VariableUsage): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'hint';
+
+  const name = document.createElement('p');
+  name.className = 'hint-name';
+  name.textContent =
+    usage.suggestion === undefined
+      ? usage.name
+      : `${usage.name} = ${JSON.stringify(usage.suggestion)}`;
+  card.append(name);
+
+  const usedBy = document.createElement('p');
+  usedBy.className = 'hint-usage';
+  if (usage.kind === 'collection') {
+    usedBy.textContent = `coleção da multi-instância em ${usage.usedBy.join(', ')}`;
+  } else {
+    const expression = document.createElement('span');
+    expression.className = 'hint-expression';
+    expression.textContent = usage.expressions[0] ?? '';
+    usedBy.append(expression, ` · ${usage.usedBy.join(', ')}`);
+  }
+  card.append(usedBy);
+  return card;
 }
 
 /** Timers pendentes, com atalho para adiantar o relógio na demonstração. */
@@ -470,6 +526,7 @@ els.reset.addEventListener('click', () => {
 });
 els.fit.addEventListener('click', () => viewer.fit());
 els.replay.addEventListener('click', () => replayRun());
+els.panelToggle.addEventListener('click', () => togglePanel());
 els.metrics.addEventListener('click', () => toggleMetrics());
 
 els.modeRun.addEventListener('click', () => void setMode('run'));
@@ -491,7 +548,24 @@ els.validate.addEventListener('click', () => void validate());
 els.save.addEventListener('click', () => void save());
 els.editFit.addEventListener('click', () => void ensureEditor().then((e) => e.fit()));
 
+const PANEL_KEY = 'bpmn-flow:panel-collapsed';
+
+/** Recolhe ou expande o painel lateral, reenquadrando o diagrama depois. */
+function togglePanel(collapsed = !els.appMain.classList.contains('panel-collapsed')): void {
+  els.appMain.classList.toggle('panel-collapsed', collapsed);
+  els.panelToggle.textContent = collapsed ? '‹' : '›';
+  els.panelToggle.title = collapsed ? 'Expandir painel' : 'Recolher painel';
+  els.panelToggle.setAttribute('aria-expanded', String(!collapsed));
+  localStorage.setItem(PANEL_KEY, String(collapsed));
+  // A área do canvas mudou de tamanho: reenquadra depois da transição.
+  window.setTimeout(() => {
+    if (els.editorEl.classList.contains('hidden')) viewer.fit();
+    else void ensureEditor().then((active) => active.fit());
+  }, 220);
+}
+
 async function init(): Promise<void> {
+  togglePanel(localStorage.getItem(PANEL_KEY) === 'true');
   await populateSamples();
   await loadSelectedSample();
 }
