@@ -1,9 +1,13 @@
 import {
+  decisionsAfter,
+  evaluateCondition,
   parseBpmn,
   processVariables,
   suggestVariables,
   WorkflowEngine,
   type BpmnModel,
+  type DecisionOption,
+  type DecisionPoint,
   type EngineMode,
   type ExecutionSnapshot,
   type FlowNode,
@@ -21,6 +25,14 @@ import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
 import './style.css';
 import { fetchSampleNames, fetchSampleXml, saveSample } from './api.js';
 import { BpmnEditor } from './editor.js';
+import {
+  formatValue,
+  StepPrompt,
+  type PromptChoice,
+  type PromptField,
+  type StepAnswer,
+  type StepRequest,
+} from './prompt.js';
 
 const BUNDLED = import.meta.glob('../../../bpmn-files/*.bpmn', {
   query: '?raw',
@@ -79,6 +91,18 @@ let replayTimer: number | undefined;
 let metricsShown = false;
 let editorXml: string | undefined;
 let remoteSamples = false;
+
+const prompt = new StepPrompt();
+/** Uma execução conduzida está em andamento (botão Run). */
+let guiding = false;
+let stopRequested = false;
+/** O operador pediu para seguir até o fim sem mais perguntas. */
+let autoAnswer = false;
+
+/** Intervalo entre dois passos da animação, em milissegundos. */
+const STEP_MS = 500;
+/** Teto de paradas atendidas numa condução, contra processo que nunca acaba. */
+const MAX_STEPS = 200;
 
 // --- Sample loading ----------------------------------------------------
 
@@ -139,7 +163,7 @@ async function loadDiagram(xml: string): Promise<void> {
   renderVariableHints();
   await viewer.load(xml);
   teardownEngine();
-  stopAnimation();
+  stopGuided();
   metricsShown = false;
   els.log.replaceChildren();
   els.actions.replaceChildren();
@@ -335,54 +359,272 @@ function renderTimers(): void {
 }
 
 /**
- * Executa o processo e mostra o caminho passo a passo no diagrama. Se já houver
- * uma execução em andamento, reprisa o que aconteceu até aqui; clicar de novo
- * durante a animação interrompe.
+ * Executa passo a passo. Anima no diagrama o que a engine já fez e, a cada
+ * parada, abre um diálogo com o que só uma pessoa decide: concluir a atividade,
+ * informar um valor, escolher o caminho. Clicar de novo interrompe.
  */
-async function runAndAnimate(): Promise<void> {
-  if (replayTimer !== undefined) {
-    stopAnimation();
+async function guidedRun(): Promise<void> {
+  if (guiding) {
+    stopGuided();
     return;
   }
+  guiding = true;
+  stopRequested = false;
+  autoAnswer = false;
+  els.replay.textContent = 'Parar';
   try {
-    if (!engine) {
-      engine = newEngine('auto', readVariables());
-      render(await engine.start());
+    engine ??= newEngine('automation', readVariables());
+    // Enquanto conduz, quem pinta é a animação — não os eventos da engine.
+    unbindViewer?.();
+    unbindViewer = undefined;
+    viewer.clear();
+
+    let snapshot = engine.snapshot();
+    if (snapshot.status === 'idle') snapshot = await engine.start();
+    let shown = 0;
+    for (let step = 0; step < MAX_STEPS && !stopRequested; step++) {
+      shown = await animateFrom(snapshot.history, shown);
+      if (stopRequested || snapshot.status !== 'waiting') break;
+      // O painel acompanha a parada, para o diálogo e a lateral contarem a
+      // mesma história.
+      renderActions(snapshot.tokens);
+      renderTimers();
+      const next = await answerStep(snapshot);
+      if (!next) break;
+      snapshot = next;
+      els.variablesView.textContent = JSON.stringify(snapshot.variables, null, 2);
     }
-    animate(engine.snapshot().history);
   } catch (error) {
     fail(error);
+  } finally {
+    finishGuided();
   }
 }
 
-/** Percorre o histórico quadro a quadro sobre o diagrama. */
-function animate(history: HistoryEntry[]): void {
+/** Percorre o histórico do passo `from` até o fim; devolve quantos já foram. */
+function animateFrom(history: HistoryEntry[], from: number): Promise<number> {
   const replay = new ExecutionReplay(history);
-  if (replay.length === 0) {
-    els.status.textContent = 'Nada para mostrar: o processo não executou nenhum passo.';
-    return;
-  }
-  els.replay.textContent = 'Parar';
-  viewer.clear();
-  replayTimer = window.setInterval(() => {
-    const frame = replay.next();
-    if (!frame) {
-      stopAnimation();
-      return;
-    }
-    viewer.applyReplayFrame(frame);
-    els.status.textContent = `Passo ${frame.index + 1}/${replay.length}: ${label(
-      frame.entry.nodeId,
-    )} (${frame.entry.event})`;
-  }, 400);
+  if (replay.length <= from) return Promise.resolve(from);
+  replay.seek(from - 1);
+  return new Promise<number>((resolve) => {
+    replayTimer = window.setInterval(() => {
+      const frame = stopRequested ? undefined : replay.next();
+      if (!frame) {
+        window.clearInterval(replayTimer);
+        replayTimer = undefined;
+        resolve(replay.position + 1);
+        return;
+      }
+      viewer.applyReplayFrame(frame);
+      els.status.textContent = `Passo ${frame.index + 1}/${replay.length}: ${label(
+        frame.entry.nodeId,
+      )} (${frame.entry.event})`;
+    }, STEP_MS);
+  });
 }
 
-/** Encerra a animação e devolve o diagrama ao estado real da execução. */
-function stopAnimation(): void {
+/** Interrompe a condução: para a animação e fecha um diálogo aberto. */
+function stopGuided(): void {
+  stopRequested = true;
+  prompt.close();
+}
+
+/** Devolve o diagrama ao estado real da execução e religa a pintura ao vivo. */
+function finishGuided(): void {
+  guiding = false;
+  stopRequested = false;
+  autoAnswer = false;
   if (replayTimer !== undefined) window.clearInterval(replayTimer);
   replayTimer = undefined;
+  prompt.close();
   els.replay.textContent = 'Run';
-  if (engine) render(engine.snapshot());
+  if (!engine) return;
+  unbindViewer ??= viewer.bindEngine(engine);
+  render(engine.snapshot());
+}
+
+/** O que perguntar numa parada, e o que fazer com a resposta. */
+interface Step {
+  request: StepRequest;
+  /** Resposta usada quando o operador pediu para seguir sem perguntar. */
+  defaults: Record<string, unknown>;
+  apply: (answer: StepAnswer) => Promise<ExecutionSnapshot>;
+}
+
+/** Pergunta a parada atual (ou responde sozinho) e devolve o estado seguinte. */
+async function answerStep(snapshot: ExecutionSnapshot): Promise<ExecutionSnapshot | undefined> {
+  const step = nextStep(snapshot);
+  if (!step) return undefined;
+  const answer: StepAnswer = autoAnswer
+    ? { action: 'confirm', values: step.defaults, choiceId: step.request.selected }
+    : await prompt.ask(step.request);
+  if (answer.action === 'stop') return undefined;
+  if (answer.action === 'auto') autoAnswer = true;
+  return step.apply(answer);
+}
+
+/** A primeira parada que depende de alguém de fora. */
+function nextStep(snapshot: ExecutionSnapshot): Step | undefined {
+  if (!engine) return undefined;
+  const active = engine;
+
+  const incident = active.incidentList()[0];
+  if (incident) {
+    return {
+      request: {
+        title: label(incident.nodeId),
+        reason: `A atividade falhou: ${incident.message}`,
+        badges: [`${incident.attempts} tentativa(s)`],
+        choices: [],
+        fields: [],
+        confirmLabel: 'Tentar de novo',
+      },
+      defaults: {},
+      apply: () => active.retryTask(incident.tokenId),
+    };
+  }
+
+  // tasks() também devolve gateway de evento e incidente; aqui só interessa o
+  // que uma pessoa conclui ou dispara.
+  const task = active.tasks({ reason: ['userTask', 'receiveTask', 'catchEvent'] })[0];
+  if (task) return taskStep(active, task);
+
+  const gateway = snapshot.tokens.find((token) => token.waitReason === 'eventBasedGateway');
+  if (gateway) return gatewayStep(active, gateway);
+
+  const timer = active.nextTimerAt();
+  if (timer === undefined) return undefined;
+  return {
+    request: {
+      title: 'Timer pendente',
+      reason: 'A execução só continua quando o relógio chegar lá.',
+      badges: [],
+      choices: [],
+      fields: [],
+      confirmLabel: 'Adiantar relógio',
+    },
+    defaults: {},
+    apply: () => active.tick(timer),
+  };
+}
+
+/** Tarefa parada: concluir (ou sinalizar) e responder o que vem logo depois. */
+function taskStep(active: WorkflowEngine, task: PendingTask): Step {
+  const trigger = task.reason === 'catchEvent' || task.reason === 'receiveTask';
+  const timer = timerOf(nodesById.get(task.nodeId));
+  const ahead = decisionPrompt(task.nodeId, task.variables);
+  return {
+    request: {
+      title: task.name ?? task.nodeId,
+      reason: timer
+        ? `Esperando o relógio: ${timer}.`
+        : trigger
+          ? 'Esperando um gatilho externo (mensagem, sinal).'
+          : 'Esperando alguém concluir a atividade.',
+      badges: [task.lane, ...task.candidates].filter((text): text is string => Boolean(text)),
+      choices: ahead.choices,
+      fields: ahead.fields,
+      selected: ahead.selected,
+      confirmLabel: timer ? 'Disparar agora' : trigger ? 'Sinalizar' : 'Concluir',
+    },
+    defaults: ahead.defaults,
+    apply: (answer) =>
+      trigger
+        ? active.signal(task.nodeId, answer.values)
+        : active.completeTask(task.tokenId, answer.values),
+  };
+}
+
+/** Definição do timer do nó, quando ele espera o relógio. */
+function timerOf(node: FlowNode | undefined): string | undefined {
+  for (const detail of node?.events ?? (node?.event ? [node.event] : [])) {
+    if (detail.kind === 'timer') return detail.timer ?? 'timer';
+  }
+  return undefined;
+}
+
+/** Gateway baseado em evento: a escolha é qual gatilho chega primeiro. */
+function gatewayStep(active: WorkflowEngine, token: TokenSnapshot): Step {
+  const flows = currentModel?.processes[0]?.sequenceFlows ?? [];
+  const choices: PromptChoice[] = [];
+  for (const flowId of nodesById.get(token.nodeId)?.outgoing ?? []) {
+    const flow = flows.find((candidate) => candidate.id === flowId);
+    if (flow) choices.push({ id: flow.targetRef, label: label(flow.targetRef) });
+  }
+  const first = choices[0]?.id;
+  return {
+    request: {
+      title: label(token.nodeId),
+      reason: 'Gateway baseado em evento: o primeiro gatilho a chegar decide o caminho.',
+      badges: [],
+      choices,
+      fields: [],
+      selected: first,
+      confirmLabel: 'Sinalizar',
+    },
+    defaults: {},
+    apply: (answer) => active.signal(answer.choiceId ?? first ?? token.nodeId),
+  };
+}
+
+/**
+ * As escolhas e os valores que a execução vai encontrar logo depois deste nó.
+ * Só o primeiro ponto de decisão vira opções de caminho — os seguintes ainda
+ * dependem do que for respondido aqui, então entram apenas como valores.
+ */
+function decisionPrompt(
+  nodeId: string,
+  variables: Record<string, unknown>,
+): {
+  choices: PromptChoice[];
+  fields: PromptField[];
+  defaults: Record<string, unknown>;
+  selected?: string;
+} {
+  const process = currentModel?.processes[0];
+  const decisions = process ? decisionsAfter(process, nodeId) : [];
+  const choices: PromptChoice[] = [];
+  const fields: PromptField[] = [];
+  const defaults: Record<string, unknown> = {};
+  let selected: string | undefined;
+
+  decisions.forEach((decision, index) => {
+    const current = matchingOption(decision, variables);
+    if (index === 0) {
+      selected = current?.flowId;
+      for (const option of decision.options) {
+        choices.push({
+          id: option.flowId,
+          label: option.label,
+          hint: option.condition ?? (option.isDefault ? 'caminho padrão' : undefined),
+          assignments: option.assignments,
+        });
+      }
+    }
+    for (const name of decision.variables) {
+      if (fields.some((field) => field.name === name)) continue;
+      const value = Object.hasOwn(variables, name) ? variables[name] : current?.assignments[name];
+      if (value !== undefined) defaults[name] = value;
+      fields.push({
+        name,
+        value: formatValue(value),
+        hint: `lido em ${decision.name ?? decision.nodeId}`,
+      });
+    }
+  });
+  return { choices, fields, defaults, selected };
+}
+
+/** O caminho que as variáveis de agora já escolheriam. */
+function matchingOption(
+  decision: DecisionPoint,
+  variables: Record<string, unknown>,
+): DecisionOption | undefined {
+  const conditional = decision.options.filter((option) => !option.isDefault);
+  const match = conditional.find(
+    (option) => !option.condition || evaluateCondition(option.condition, variables),
+  );
+  return match ?? decision.options.find((option) => option.isDefault) ?? decision.options[0];
 }
 
 /** Liga/desliga as etiquetas de tempo médio por atividade. */
@@ -553,7 +795,7 @@ els.reset.addEventListener('click', () => {
   if (currentXml) void loadDiagram(currentXml);
 });
 els.fit.addEventListener('click', () => viewer.fit());
-els.replay.addEventListener('click', () => void runAndAnimate());
+els.replay.addEventListener('click', () => void guidedRun());
 els.panelToggle.addEventListener('click', () => togglePanel());
 els.metrics.addEventListener('click', () => toggleMetrics());
 

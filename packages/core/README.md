@@ -34,6 +34,29 @@ usa e um valor sugerido pela forma dela. Variáveis que o processo só escreve
 suggestVariables(process); // { pago: true, valor: 1001, itens: ['item-1', 'item-2'] }
 ```
 
+### `decisionsAfter(process, nodeId): DecisionPoint[]`
+
+Os pontos em que o processo se divide depois daquele nó, com os valores que
+mandam a execução por cada caminho. A caminhada segue os fluxos por atividades
+automáticas e divisões paralelas, e para em cada nó que decide e em cada estado
+de espera — quem conduz a execução vai ser perguntado lá.
+
+```ts
+decisionsAfter(process, 'PreencherFormulario');
+// [{ nodeId: 'Gateway_1', name: 'Valor > R$ 1000?', kind: 'exclusiveGateway',
+//    variables: ['valor'],
+//    options: [{ flowId: 'f4', targetId: 'AprovacaoGerencial', label: 'Sim',
+//                condition: 'valor > 1000', isDefault: false,
+//                assignments: { valor: 1001 } },
+//              { flowId: 'f5', targetId: 'Gateway_2', label: 'Não',
+//                isDefault: true, assignments: { valor: 1000 } }] }]
+```
+
+Cada opção traz sua condição satisfeita e as concorrentes refutadas, então
+aplicar `assignments` deixa exatamente aquele caminho aberto. Quando a expressão
+não diz nada sobre a forma do valor (uma chamada, uma conta), `assignments` vem
+vazio e o valor tem de ser informado.
+
 ### `addFlowReferences(xml): Promise<string>`
 
 Devolve o mesmo XML com o `<bpmn:incoming>`/`<bpmn:outgoing>` de cada nó

@@ -42,10 +42,13 @@ Há dois modos, alternados pelos botões "Executar" e "Editar".
 - O painel mostra status, variáveis e o histórico da execução; o diagrama
   destaca nós concluídos, tokens ativos, atividades em espera e fluxos
   percorridos.
-- "Run" executa o processo e mostra o caminho passo a passo no diagrama. Se já
-  houver uma execução em andamento, reprisa o que aconteceu até ali; durante a
-  animação o botão vira "Parar". "Métricas" liga etiquetas de tempo médio em
-  cada atividade.
+- "Run" conduz a execução passo a passo: anima o caminho no diagrama e, a cada
+  parada, abre um diálogo com o que depende de uma pessoa — concluir a
+  atividade, informar um valor, escolher o caminho do gateway seguinte (as
+  opções vêm das condições do próprio diagrama, e marcar uma preenche os valores
+  que levam até ela). "Seguir sem perguntar" responde o resto sozinho e "Parar"
+  interrompe, devolvendo o diagrama ao estado real. Durante a condução o botão
+  vira "Parar". "Métricas" liga etiquetas de tempo médio em cada atividade.
 - O painel **Variáveis do processo** lista o que o diagrama lê, com a expressão
   que consome cada variável, e a caixa JSON já vem preenchida com valores que
   fazem o processo andar.
