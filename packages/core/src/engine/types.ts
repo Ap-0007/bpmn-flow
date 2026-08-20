@@ -94,8 +94,48 @@ export interface ExecutionSnapshot {
  */
 export type EngineMode = 'automation' | 'auto';
 
+/** One outgoing flow offered to a {@link DecisionHandler}. */
+export interface GatewayOption {
+  flowId: string;
+  targetId: string;
+  name?: string;
+  condition?: string;
+  isDefault: boolean;
+}
+
+/** A branching gateway, handed to the caller so a person can decide instead. */
+export interface GatewayDecision {
+  nodeId: string;
+  nodeKind: ElementKind;
+  name?: string;
+  /** Outgoing flows, in document order. */
+  options: GatewayOption[];
+  /** Flow ids the conditions would take on their own. */
+  suggested: string[];
+  /** Variables visible at the gateway. */
+  variables: Record<string, unknown>;
+}
+
+/**
+ * Decides which flow(s) leave a gateway, overriding the conditions.
+ *
+ * Returning `undefined` (or an id the gateway does not have) keeps the
+ * engine's own decision, so the hook can answer some gateways and let the data
+ * answer the rest. An exclusive gateway takes the first id returned; an
+ * inclusive one takes all of them.
+ */
+export type DecisionHandler = (
+  decision: GatewayDecision,
+) => string | string[] | undefined | Promise<string | string[] | undefined>;
+
 export interface EngineOptions {
   mode?: EngineMode;
+  /**
+   * Asked before an exclusive/inclusive gateway routes a token, so a person (or
+   * another system) can choose the branch. Absent by default: gateways decide
+   * from the data, as the specification says.
+   */
+  decide?: DecisionHandler;
   /**
    * Clock used to schedule timer events. Defaults to `Date.now`; inject a fake
    * one to test timers without waiting.

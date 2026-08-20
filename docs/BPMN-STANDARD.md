@@ -257,6 +257,10 @@ expressão que ainda assim lança, ou que não retorna `true`, é tratada como f
    mensagem/sinal ou pelo id do elemento.
 6. **DMN está fora de escopo.** `businessRuleTask` executa o handler que você
    registrar, e é por ali que um motor de decisão entra.
+7. **`options.decide`.** Extensão opcional: quando registrada, o gateway
+   exclusivo/inclusivo pergunta ao host antes de rotear, e a resposta se sobrepõe
+   às condições. Serve a simulação e a decisão humana; sem ela nada muda, o
+   gateway decide pelos dados como manda a especificação.
 
 ## Medição
 

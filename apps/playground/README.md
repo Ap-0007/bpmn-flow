@@ -46,7 +46,9 @@ Há dois modos, alternados pelos botões "Executar" e "Editar".
   parada, abre um diálogo com o que depende de uma pessoa — concluir a
   atividade, informar um valor, escolher o caminho do gateway seguinte (as
   opções vêm das condições do próprio diagrama, e marcar uma preenche os valores
-  que levam até ela). "Seguir sem perguntar" responde o resto sozinho e "Parar"
+  que levam até ela). Num processo sem tarefa nenhuma — o
+  `processo-viagem-compensacao`, por exemplo — a pergunta acontece no próprio
+  gateway, quando o token chega nele: a escolha vale mais que a condição. "Seguir sem perguntar" responde o resto sozinho e "Parar"
   interrompe, devolvendo o diagrama ao estado real. Durante a condução o botão
   vira "Parar". "Métricas" liga etiquetas de tempo médio em cada atividade.
 - O painel **Variáveis do processo** lista o que o diagrama lê, com a expressão
