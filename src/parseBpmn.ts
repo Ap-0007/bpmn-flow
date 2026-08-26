@@ -1,0 +1,3 @@
+if (token !== null && token !== undefined) {
+  // ... parse token ...
+}
