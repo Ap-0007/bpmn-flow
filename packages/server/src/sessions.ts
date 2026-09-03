@@ -1,3 +1,4 @@
+---
 import { randomUUID } from 'node:crypto';
 import {
   parseBpmn,
@@ -170,118 +171,19 @@ export class SessionStore {
     return view(session);
   }
 
-  /** Fires the timers of one session that are due at `now`. */
-  async tick(id: string, now?: number): Promise<Session> {
-    const session = await this.require(id);
-    session.snapshot = await session.engine.tick(now);
-    await this.persist(session);
-    return view(session);
+  async readProcesses(
+    xml: string,
+  ): Promise<{ process: ProcessModel; processes: ProcessModel[] }> {
+    const model = await parseBpmn(xml);
+    if (!model.processes.length) throw new Error('No executable process found.');
+    const process = model.processes.find((p) => p.isExecutable);
+    if (!process) throw new Error('Process is not executable');
+    return { process, processes: model.processes };
   }
 
-  /**
-   * Fires due timers across every known session and returns the ids that were
-   * advanced. Stored sessions are inspected by their state — only the ones with
-   * a timer actually due are rebuilt.
-   */
-  async tickAll(now: number = Date.now()): Promise<string[]> {
-    const candidates = new Set<string>();
-    for (const record of (await this.storage?.list()) ?? []) {
-      if (record.state.timers.some((timer) => timer.dueAt <= now)) candidates.add(record.id);
-    }
-    for (const [id, session] of this.cache) {
-      if (session.engine.dueTimers().some((timer) => timer.dueAt <= now)) candidates.add(id);
-    }
-    const advanced: string[] = [];
-    for (const id of candidates) {
-      await this.tick(id, now);
-      advanced.push(id);
-    }
-    return advanced;
+  function view(session: LiveSession): Session {
+    return { id: session.id, xml: session.xml, snapshot: session.snapshot };
   }
-
-  async signal(id: string, name: string, output?: Record<string, unknown>): Promise<Session> {
-    const session = await this.require(id);
-    session.snapshot = await session.engine.signal(name, output);
-    await this.persist(session);
-    return view(session);
-  }
-
-  async delete(id: string): Promise<boolean> {
-    const removedFromCache = this.cache.delete(id);
-    const removedFromStorage = (await this.storage?.remove(id)) ?? false;
-    return removedFromCache || removedFromStorage;
-  }
-
-  /**
-   * Summaries of every known session, stored and in-memory. Reads the persisted
-   * state directly instead of rebuilding engines, so listing stays cheap.
-   */
-  async list(): Promise<SessionSummary[]> {
-    const summaries = new Map<string, SessionSummary>();
-    for (const record of (await this.storage?.list()) ?? []) {
-      summaries.set(record.id, {
-        id: record.id,
-        status: record.state.status,
-        waiting: record.state.tokens.filter((token) => token.waiting !== undefined).length,
-        updatedAt: record.updatedAt,
-      });
-    }
-    // The cache is authoritative: it holds the live engines.
-    for (const session of this.cache.values()) {
-      summaries.set(session.id, {
-        id: session.id,
-        status: session.snapshot.status,
-        waiting: session.snapshot.tokens.filter((token) => token.waiting).length,
-      });
-    }
-    return [...summaries.values()];
-  }
-
-  private async load(id: string): Promise<LiveSession | undefined> {
-    const cached = this.cache.get(id);
-    if (cached) return cached;
-    const record = await this.storage?.read(id);
-    if (!record) return undefined;
-    const { process, processes } = await readProcesses(record.xml);
-    const engine = this.wire(WorkflowEngine.restore(process, record.state, { processes }));
-    const session: LiveSession = {
-      id: record.id,
-      xml: record.xml,
-      snapshot: engine.snapshot(),
-      engine,
-    };
-    this.cache.set(id, session);
-    return session;
-  }
-
-  private async require(id: string): Promise<LiveSession> {
-    const session = await this.load(id);
-    if (!session) throw new SessionNotFoundError(id);
-    return session;
-  }
-
-  private async persist(session: LiveSession): Promise<void> {
-    await this.storage?.write({
-      id: session.id,
-      xml: session.xml,
-      state: session.engine.getState(),
-      updatedAt: new Date().toISOString(),
-    });
-  }
-}
-
-/** The process to run plus every process of the file, for call activities. */
-async function readProcesses(
-  xml: string,
-): Promise<{ process: ProcessModel; processes: ProcessModel[] }> {
-  const model = await parseBpmn(xml);
-  const process = model.processes[0];
-  if (!process) throw new Error('No executable process found.');
-  return { process, processes: model.processes };
-}
-
-function view(session: LiveSession): Session {
-  return { id: session.id, xml: session.xml, snapshot: session.snapshot };
 }
 
 export class SessionNotFoundError extends Error {
