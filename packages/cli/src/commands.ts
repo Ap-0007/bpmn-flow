@@ -1,3 +1,4 @@
+---
 import {
   parseBpmn,
   validateBpmn,
@@ -99,7 +100,7 @@ export async function inspect(xml: string): Promise<CommandResult> {
 /** `bpmn-flow run <file>` — executes and reports where it stopped. */
 export async function run(xml: string, options: RunOptions = {}): Promise<RunResult> {
   const model = await parseBpmn(xml);
-  const process = model.processes[0];
+  const process = model.processes.find((p) => p.isExecutable);
   if (!process) throw new Error('No executable process found in the diagram.');
 
   const engine = options.state
