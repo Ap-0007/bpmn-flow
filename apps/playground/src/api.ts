@@ -1,3 +1,4 @@
+---
 import type { ValidationIssue } from '@bpmn-flow/core';
 
 export interface SaveResult {
@@ -33,4 +34,33 @@ export async function saveSample(name: string, xml: string): Promise<SaveResult>
   const data = (await res.json()) as SaveResult & { error?: string };
   if (!res.ok) throw new Error(data.error ?? 'Falha ao salvar.');
   return data;
+}
+
+/** Fetches a list of processes from the model. */
+export async function getProcesses(model: any): Promise<any> {
+  const process = model.processes.find((p) => p.isExecutable);
+  if (!process) throw new Error('No executable process found in the diagram.');
+  
+  // Process logic here
+}
+
+/** Fetches a list of processes from the server. */
+export async function readProcesses(): Promise<{ name: string; isExecutable: boolean }[]> {
+  const process = model.processes.find((p) => p.isExecutable);
+  if (!process) throw new Error('No executable process found in the diagram.');
+  
+  // Process logic here
+}
+
+/** Run commands from this server. */
+export async function run(): Promise<void> {
+  // Commands logic here
+}
+
+/** Runs a sample with the given XML. */
+export async function newEngine(): Promise<void> {
+  const process = model.processes.find((p) => p.isExecutable);
+  if (!process) throw new Error('No executable process found in the diagram.');
+  
+  // Process logic here
 }
